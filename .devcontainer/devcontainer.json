@@ -1,0 +1,31 @@
+{
+    "name": "PlatformIO ESP8266",
+    "build": {
+        "dockerfile": "Dockerfile"
+    },
+
+    // --privileged is required so the container can access USB serial adapters
+    // (CH340, CP2102, FTDI, etc.) used to flash the ESP8266.
+    // If you prefer a narrower grant, replace --privileged with:
+    //   "--device=/dev/ttyUSB0"  (adjust the path as needed)
+    "runArgs": [
+        "--privileged"
+    ],
+
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "platformio.platformio-ide"
+            ],
+            "settings": {
+                "terminal.integrated.defaultProfile.linux": "bash"
+            }
+        }
+    },
+
+    // Pre-installs the ESP8266 toolchain so the first build is fast.
+    // Remove this line if you prefer to let PlatformIO download it on demand.
+    "postCreateCommand": "pio platform install espressif8266",
+
+    "remoteUser": "root"
+}
