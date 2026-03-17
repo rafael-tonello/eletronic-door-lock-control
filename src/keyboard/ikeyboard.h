@@ -1,3 +1,6 @@
+#ifndef IKEYBOARD_H
+#define IKEYBOARD_H
+
 #include <functional>
 #include <vector>
 #include <iiohal.h>
@@ -5,8 +8,7 @@
 
 using namespace std;
 
-
-class IKeyBoard{
+class IKeyboard{
     struct KeyState{
         IIOHAL_IO_ID_TYPE key;
         bool rawState;
@@ -19,7 +21,7 @@ class IKeyBoard{
     public:
         virtual vector<IIOHAL_IO_ID_TYPE> GetKeyIOS() = 0;
     protected:
-        virtual bool IsKeyPressed(char key) = 0;
+        virtual bool IsKeyPressed(IIOHAL_IO_ID_TYPE key) = 0;
 //}
 
 //can be overridden (methods with defualt implementation){
@@ -29,30 +31,34 @@ class IKeyBoard{
             int time;
         };
 
-        EventStream<PressEvent> OnKeyPress;
+        EventStream<PressEvent> OnKeyUp;
+        EventStream<PressEvent> OnKeyDown;
         EventStream<PressEvent> OnKeyPressing;
 
-        virtual KeyState *GetKeyState(IIOHAL_IO_ID_TYPE key) = 0;
+        virtual KeyState GetKeyState(IIOHAL_IO_ID_TYPE key){
+            if (lastKeysStates.count(key))
+                return lastKeysStates[key];
+            else
+                return KeyState{.key = key, .rawState = false, .debauncedState = false, .currentStateTime = 0, .startTime = 0};
+        }
     protected:
         bool started = false;
         
 
-        vector<KeyState> lastKeysStates;
+        std::map<IIOHAL_IO_ID_TYPE, KeyState> lastKeysStates;
         //this method should be called periodicaly by the keyboard implementation, it is used to check the state of the keys and call the appropriate callbacks
         virtual void default_work_step(){
             auto keyIOs = GetKeyIOS();
             if (!started){
                 started = true;
                 for (auto io: keyIOs)
-                    lastKeysStates.push_back(
-                        KeyState{
-                            .key = io,
-                            .rawState = false,
-                            .debauncedState = false,
-                            .currentStateTime = 0,
-                            .startTime = 0
-                        }
-                    );
+                    lastKeysStates[io] = KeyState{
+                        .key = io,
+                        .rawState = false,
+                        .debauncedState = false,
+                        .currentStateTime = 0,
+                        .startTime = 0
+                    };
             }
 
             for (auto key: keyIOs) {
@@ -70,6 +76,7 @@ class IKeyBoard{
                     if (keyState.currentStateTime < 10)
                         return;
 
+                    auto oldDebauncedState = keyState.debauncedState;
                     keyState.debauncedState = rawState;
 
                     if (rawState){
@@ -81,8 +88,16 @@ class IKeyBoard{
 
                         );
                     }
-                    else if (keyState.currentStateTime > 0){
-                        OnKeyPress.emit(
+                    else if (keyState.currentStateTime > 0 && oldDebauncedState){
+                        OnKeyUp.emit(
+                            PressEvent{
+                                .key = key,
+                                .time = keyState.currentStateTime
+                            }
+                        );
+                    }
+                    else if (keyState.currentStateTime > 0 && !oldDebauncedState){
+                        OnKeyDown.emit(
                             PressEvent{
                                 .key = key,
                                 .time = keyState.currentStateTime
@@ -96,3 +111,5 @@ class IKeyBoard{
 
 //}
 };
+
+#endif
