@@ -40,7 +40,7 @@ Task Task::Invalid = Task("invalid task", [](){});
  * High priority:| hh hh  hh hh  hh hh  hh hh
  * Mid priority :|   m  m   m  m   m  m   m  m
  * low priority :|       l      l      l       l
- *            ---+------------------------------------> (time)
+ *            ---+------------------------------------> (period)
  *               |
  *
  * For the example above, the scheduler will take tasks following this vector
@@ -208,13 +208,13 @@ void Scheduler::processTimedTasks(uint elapsedTime)
     processingTimedTasks = false;
 }
 
-/// @brief Check a timed task waiting time and run it when the time is reached
+/// @brief Check a timed task waiting period and run it when the time is reached
 /// @param task The task to be processed
 /// @param elaspedTime elasped time, in miliseconds, since the last call to this function
 void Scheduler::processATimedTask(const std::shared_ptr<TimedTask>& task, uint elapsedTime)
 {
-    task->timeCount += elapsedTime;
-    if (task->timeCount >= task->time )
+    task->_timeCount += elapsedTime;
+    if (task->_timeCount >= task->period )
     {
         task->taskAge += elapsedTime;
         if (!task->isCurrentlyScheduled)
@@ -226,7 +226,7 @@ void Scheduler::processATimedTask(const std::shared_ptr<TimedTask>& task, uint e
                 task->f();
 
                 if (task->type == TimedTask::TimedTaskType::TIMEOUT)
-                    task->abortTask();
+                    task->abort();
 
                 task->isCurrentlyScheduled = false;
             }, task->name, task->priority);
@@ -234,7 +234,7 @@ void Scheduler::processATimedTask(const std::shared_ptr<TimedTask>& task, uint e
         }
 
         if (task->type == TimedTask::TimedTaskType::PERIODIC)
-            task->timeCount = 0;
+            task->_timeCount = 0;
     }
 }
 
@@ -257,9 +257,9 @@ void Scheduler::delayedTask(uint delay, function<void()>f, String name, PrioDesc
     this->timedTasks.push_back(tsk);
 }
 
-TimedTask *Scheduler::periodicTask(
+std::shared_ptr<TimedTask> Scheduler::periodicTask(
     uint period, 
-    function<void(TimedTask *taskControlObject)>f, 
+    function<void(std::shared_ptr<TimedTask>)>f, 
     String name, 
     bool firstShotImediately, 
     PrioDescriptionType priority, 
@@ -268,21 +268,21 @@ TimedTask *Scheduler::periodicTask(
 {
     auto tsk = std::make_shared<TimedTask>(TimedTask::TimedTaskType::PERIODIC, period, [](){},priority, name);
     tsk->f = [=](){
-        f(tsk.get());
+        f(tsk);
     };
 
     if (firstShotImediately)
-        tsk->timeCount = tsk->time;
+        tsk->_timeCount = tsk->period;
     else
-        tsk->timeCount = 0;
+        tsk->_timeCount = 0;
 
     this->timedTasks.push_back(tsk);
 
     tsk->state = initialState;
-    return tsk.get();
+    return tsk;
 }
 
-TimedTask *Scheduler::periodicTask(
+std::shared_ptr<TimedTask> Scheduler::periodicTask(
     uint period, 
     function<void()>f, 
     String name, 
@@ -291,7 +291,7 @@ TimedTask *Scheduler::periodicTask(
     std::map<String, String> initialState
 )
 {
-    return periodicTask(period, [f, name](TimedTask* objCtrl){
+    return periodicTask(period, [f, name](std::shared_ptr<TimedTask> objCtrl){
         f();
     }, name, firstShotImediately, priority, initialState);
 }

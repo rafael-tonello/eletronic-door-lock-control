@@ -23,6 +23,7 @@ namespace ProcessChain{
         //helpers
             typedef shared_ptr<Promise<T>> smp_t;
             typedef shared_ptr<Promise<T>> shared_memory_t;
+            typedef shared_ptr<Promise<T>> type;
 
             static shared_ptr<Promise<T>> get_shared_memory_promise(String name = ""){return getSMP(name);}
 
@@ -30,6 +31,7 @@ namespace ProcessChain{
             static shared_ptr<Promise<T>> get_smp(String name = ""){ return getSMP(name); }
             //internally, this function calls the getSMP function to create a shared memory poniter. Do exacly the same of get_smp
             static shared_ptr<Promise<T>> create_smp(String name = ""){ return getSMP(name); }
+            static shared_ptr<Promise<T>> instance(String name = ""){ return getSMP(name); }
     };
 
     using RO_continue = function<void()>;

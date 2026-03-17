@@ -62,7 +62,7 @@ namespace ProcessChain {
     private:
         int curr = 1;
         bool done = false;
-        map<int, function<void()>> pending;
+        IIOHAL_IO_ID_TYPE<int, function<void()>> pending;
         function<void()> onDone = [](){};
         function<void(function<void()>)> schedule = [](function<void()> f){f();};
     public:

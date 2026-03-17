@@ -36,11 +36,12 @@ public:
     bool __abort = false;
     bool __paused = false;
     enum TimedTaskType {PERIODIC, TIMEOUT};
-    uint time;
+    //the time of the task. For periodic tasks, this is the period. For timeout tasks, this is the delay until the task is executed
+    uint period;
     TimedTaskType type = TimedTaskType::PERIODIC;
     PrioDescriptionType priority = 0;
     //the time count of this task. Is used for control when the task should be executed
-    uint timeCount = 0;
+    uint _timeCount = 0;
 
     //task life time, since it was created
     uint taskAge = 0;
@@ -49,23 +50,23 @@ public:
     bool isCurrentlyScheduled = false;
 
     //finishes the task
-    void abortTask(){ this->__abort = true; }
+    void abort(){ this->__abort = true; }
 
-    void pauseTask(){ this->__paused = true; }
+    void pause(){ this->__paused = true; }
 
-    void resumeTask(){ this->__paused = false; }
+    void resume(){ this->__paused = false; }
 
     std::map<String, String> state;
 
 
     TimedTask(
         TimedTaskType type, 
-        uint time, 
+        uint period, 
         function<void()> f, 
         PrioDescriptionType priority,
         String name = ""
     ):  Task(name, f),
-        time(time), 
+        period(period), 
         type(type), 
         priority(priority)
         
@@ -174,7 +175,7 @@ public:
      * @param priority Is the priority os the task, according with the priorities specified in the Scheduler class instantiation
      * @return Scheduler& A reference to the Scheduler itself, allow you to make things like 'scheduler.run([](){}).run([](){})'
      */
-    TimedTask *periodicTask(
+    std::shared_ptr<TimedTask> periodicTask(
         uint period, function<void()> f, 
         String name = "", 
         bool firstShotImediately = true, 
@@ -192,9 +193,9 @@ public:
      * @param priority Is the priority os the task, according with the priorities specified in the Scheduler class instantiation
      * @return Scheduler& A reference to the Scheduler itself, allow you to make things like 'scheduler.run([](){}).run([](){})'
      */
-    TimedTask *periodicTask(
+    std::shared_ptr<TimedTask> periodicTask(
         uint period, 
-        function<void(TimedTask *taskControlObject)>f, 
+        function<void(std::shared_ptr<TimedTask>)>f, 
         String name = "", 
         bool firstShotImediately = true, 
         PrioDescriptionType priority = USE_THE_DEFAULT_PRIORITY, 
