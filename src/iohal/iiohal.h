@@ -1,17 +1,39 @@
+#ifndef IIOHAL_H 
+#define IIOHAL_H 
+
 #include <Arduino.h>
 #include <errors/errors.h>
 
 using namespace std;
 
-/*IIOHall.h file*/
-
 #define IIOHAL_MAX_ANALOGIC 1023
 #define IIOHAL_IO_ID_TYPE int
+#define IOHAL_INVALID_IO -1
+
+//SHOULD BE override by implementations
+//#define IOHAL_D0 0x0
+//#define IOHAL_D1 0x0
+//#define IOHAL_D... 0x0
+
+
+//SHOULD BE override/created by implementations (just a model)
+//#define IOHAL_A0 0x0
+//#define IOHAL_A1 0x0
+//#define IOHAL_A... 0x0
+    
+    
+
+extern Error ERROR_InvalidIO;
 
 enum IOMODE {
-    IOM_INPUT,
-    IOM_OUTPUT,
-    IOM_DUPLEX,
+    IOM_INPUT, //pin can be only readed
+    IOM_OUTPUT, //pin can be only writed
+    IOM_DUPLEX, //pin can be both read and written (and it can be changed at runtime)
+};
+
+enum RawPinMode{
+    RPM_INPUT,
+    RPM_OUTPUT
 };
 
 //class IClient;
@@ -66,24 +88,31 @@ enum IOMODE {
 //}
 
 class IIOHal {
-public:
+protected:
     virtual tuple<bool, Error> InternalDigitalRead(IIOHAL_IO_ID_TYPE ioNumber) = 0;
     virtual tuple<int, Error> InternalAnalogRead(IIOHAL_IO_ID_TYPE ioNumber) = 0;
 
     virtual Error InternalDigitalWrite(IIOHAL_IO_ID_TYPE ioNumber, bool value) = 0;
     virtual Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value) = 0;
 
-    virtual IOMODE GetIOMode(IIOHAL_IO_ID_TYPE ioNumber) = 0;
-    virtual bool IsAnalogic(IIOHAL_IO_ID_TYPE ioNumber) = 0;
-    virtual Error SetIOMode(IIOHAL_IO_ID_TYPE ioNumber, IOMODE mode) = 0;
+public: 
+    virtual tuple<IOMODE, Error> GetIOMode(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    virtual tuple<bool, Error> IsAnalogic(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    virtual Error SetRawPinMode(IIOHAL_IO_ID_TYPE ioNumber, RawPinMode mode) = 0;
 
     virtual vector<tuple<IIOHAL_IO_ID_TYPE, IOMODE>> GetAvailableIOS() = 0;
+
+    //return an analogic pin id (or IOHAL_INVALID_IO if unavailable)
+    virtual IIOHAL_IO_ID_TYPE GetIdAn(size_t index) = 0;
+
+    //return a digital pin id (or IOHAL_INVALID_IO if unavailable)
+    virtual IIOHAL_IO_ID_TYPE GetIdDi(size_t index) = 0;
 
     //IWifi wifi()
     //IBlurtooth bluetooth()
 public:
 
-    //optionals {
+    // #region optionals {
         struct READ_WRITE_OPTIONS{
             bool autoChangeIOMOde;
             int maxValueForAnalogic;
@@ -102,11 +131,11 @@ public:
                 options->maxValueForAnalogic = maxValue;
             };
         }
-    //}
+    // #endregion }
 
     
 
-    //read mechanism {
+    // #region read mechanism {
         class ReadResult{
         public:
             int value;
@@ -135,9 +164,7 @@ public:
             }
         };
 
-        
-
-        ReadResult Read(IIOHAL_IO_ID_TYPE ioNumber, vector<function<void(READ_WRITE_OPTIONS*)>> options){
+        ReadResult Read(IIOHAL_IO_ID_TYPE ioNumber, vector<function<void(READ_WRITE_OPTIONS*)>> options = {}){
             READ_WRITE_OPTIONS defaultOptions = {true, IIOHAL_MAX_ANALOGIC, 0};
 
             for (auto opt : options){
@@ -147,9 +174,12 @@ public:
             //check if io is setted to be an output and autoChangeIOMode is true, if so change it to input
             if (defaultOptions.autoChangeIOMOde){
                 //read current mode of io
-                IOMODE currentMode = GetIOMode(ioNumber);
+                auto [currentMode, err] = GetIOMode(ioNumber);
+                if (err != Errors::NoError){
+                    return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
+                }
                 if (currentMode == OUTPUT){
-                    SetIOMode(ioNumber, IOM_INPUT);
+                    SetRawPinMode(ioNumber, RPM_INPUT);
                 }
             }
 
@@ -158,7 +188,12 @@ public:
             Error err = Errors::NoError;
 
             //if io is an analogic input, read it as an analogic input
-            if (IsAnalogic(ioNumber)){
+            auto [isAnalogic, err2] = IsAnalogic(ioNumber);
+            if (err2 != Errors::NoError){
+                return ReadResult(0, err2, defaultOptions.maxValueForAnalogic);
+            }
+
+            if (isAnalogic){
                 auto [analogValueTmp, err] = InternalAnalogRead(ioNumber);
                 if (err != Errors::NoError){
                     return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
@@ -176,9 +211,9 @@ public:
 
             return ReadResult(analogValue, Errors::NoError, defaultOptions.maxValueForAnalogic);
         }
-    //}
+    // #endregio }
 
-    //write mechanism {
+    /* #region write mechanism { */
         class WriteValue{
         public:
             int value;
@@ -198,7 +233,7 @@ public:
         
         }; 
         #define WV WriteValue
-        virtual Error Write(IIOHAL_IO_ID_TYPE ioNumber, WV value, vector<function<void(READ_WRITE_OPTIONS*)>> options)
+        virtual Error Write(IIOHAL_IO_ID_TYPE ioNumber, WV value, vector<function<void(READ_WRITE_OPTIONS*)>> options = {})
         {
             READ_WRITE_OPTIONS defaultOptions = {true, IIOHAL_MAX_ANALOGIC, 0};
 
@@ -209,9 +244,13 @@ public:
             //check if io is setted to be an input and autoChangeIOMode is true, if so change it to output
             if (defaultOptions.autoChangeIOMOde){
                 //read current mode of io
-                IOMODE currentMode = GetIOMode(ioNumber);
+                auto [currentMode, err] = GetIOMode(ioNumber);
+                if (err != Errors::NoError){
+                    return err;
+                }
+
                 if (currentMode == IOM_INPUT){
-                    SetIOMode(ioNumber, IOM_OUTPUT);
+                    SetRawPinMode(ioNumber, RPM_OUTPUT);
                 }
             }
 
@@ -219,7 +258,12 @@ public:
             Error err = Errors::NoError;
 
             //if io is an analogic output, write it as an analogic output
-            if (IsAnalogic(ioNumber)){
+            auto [isAnalogic, err2] = IsAnalogic(ioNumber);
+            if (err2 != Errors::NoError){
+                return err2;
+            }
+
+            if (isAnalogic){
                 err = InternalAnalogWrite(ioNumber, value.value);
                 if (err != Errors::NoError){
                     return err;
@@ -235,9 +279,11 @@ public:
 
             return Errors::NoError;
         }
-    //}
+    /* #endregio } */
 
     //int readValue = io->read(DIO1);
     //io->write(DAN01, 512);
 
 };
+
+#endif
