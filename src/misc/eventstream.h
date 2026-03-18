@@ -20,6 +20,10 @@ public:
 
         return id;
     }
+    int subscribe (function<void(T)> observer)
+    {
+        return listen(observer);
+    }
 
     void stream(T item)
     {
