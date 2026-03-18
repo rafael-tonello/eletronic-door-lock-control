@@ -2,11 +2,16 @@
 
 GenericIIOHalKeyboard::GenericIIOHalKeyboard(
     IIOHal &iohal,
+    Scheduler &scheduler,
     vector<IIOHAL_IO_ID_TYPE> keyIOs
 ):
-    iohal(iohal)
-{
-    this->keyIOs = keyIOs;
+    iohal(iohal),
+    keyIOs(keyIOs)
+{ 
+    scheduler.periodicTask(15, [this](){
+        default_work_step();
+    });
+
 }
 
 vector<IIOHAL_IO_ID_TYPE> GenericIIOHalKeyboard::GetKeyIOS(){

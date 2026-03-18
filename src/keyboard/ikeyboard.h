@@ -5,6 +5,7 @@
 #include <vector>
 #include <iiohal.h>
 #include <eventstream.h>
+#include <memory>
 
 using namespace std;
 
@@ -13,8 +14,8 @@ class IKeyboard{
         IIOHAL_IO_ID_TYPE key;
         bool rawState;
         bool debauncedState;
-        int currentStateTime;
-        int startTime;
+        unsigned long currentStateTime;
+        unsigned long startTime;
     };
 
 //must be implemented by the keyboard implementation {
@@ -28,12 +29,56 @@ class IKeyboard{
     public:
         struct PressEvent{
             IIOHAL_IO_ID_TYPE key;
-            int time;
+            unsigned long totalTime;
         };
 
+        //called when a key is released (time will be count since the key was pressed until it was released)
+        EventStream<PressEvent> OnKeyPress;
+
+        //called when a key is release (time will be 0)
         EventStream<PressEvent> OnKeyUp;
+
+        //called when a key is pressed (time will be 0)
         EventStream<PressEvent> OnKeyDown;
+
+        //called periodicaly while a key is pressed (time will be count since the key was pressed until now)
         EventStream<PressEvent> OnKeyPressing;
+        
+        shared_ptr<EventStream<PressEvent>> OnSpecificKeyPress(IIOHAL_IO_ID_TYPE key){
+            auto stream = make_shared<EventStream<PressEvent>>();
+            OnKeyPress.listen([=](PressEvent event){
+                if (event.key == key)
+                    stream->emit(event);
+            });
+            return stream;
+        }
+
+        shared_ptr<EventStream<PressEvent>> OnSpecificKeyUp(IIOHAL_IO_ID_TYPE key){
+            auto stream = make_shared<EventStream<PressEvent>>();
+            OnKeyUp.listen([=](PressEvent event){
+                if (event.key == key)
+                    stream->emit(event);
+            });
+            return stream;
+        }
+
+        shared_ptr<EventStream<PressEvent>> OnSpecificKeyDown(IIOHAL_IO_ID_TYPE key){
+            auto stream = make_shared<EventStream<PressEvent>>();
+            OnKeyDown.listen([=](PressEvent event){
+                if (event.key == key)
+                    stream->emit(event);
+            });
+            return stream;
+        }
+
+        shared_ptr<EventStream<PressEvent>> OnSpecificKeyPressing(IIOHAL_IO_ID_TYPE key){
+            auto stream = make_shared<EventStream<PressEvent>>();
+            OnKeyPressing.listen([=](PressEvent event){
+                if (event.key == key)
+                    stream->emit(event);
+            });
+            return stream;
+        }
 
         virtual KeyState GetKeyState(IIOHAL_IO_ID_TYPE key){
             if (lastKeysStates.count(key))
@@ -63,15 +108,15 @@ class IKeyboard{
 
             for (auto key: keyIOs) {
                 bool rawState = IsKeyPressed(key);
+
                 auto &keyState = lastKeysStates[key];
                 if (rawState != keyState.rawState){
                     keyState.rawState = rawState;
                     keyState.currentStateTime = 0;
                     if (rawState)
                         keyState.startTime = millis();
-                }
-                else{
-                    keyState.currentStateTime += millis() - keyState.startTime; //this method should be called periodicaly with a period of 100ms, so we can use this value to calculate the current state time
+                } else {
+                    keyState.currentStateTime = millis() - keyState.startTime;
 
                     if (keyState.currentStateTime < 10)
                         return;
@@ -83,33 +128,41 @@ class IKeyboard{
                         OnKeyPressing.emit(
                             PressEvent{
                                 .key = key,
-                                .time = keyState.currentStateTime
+                                .totalTime = keyState.currentStateTime
                             }
 
                         );
                     }
-                    else if (keyState.currentStateTime > 0 && oldDebauncedState){
-                        OnKeyUp.emit(
-                            PressEvent{
-                                .key = key,
-                                .time = keyState.currentStateTime
-                            }
-                        );
-                    }
-                    else if (keyState.currentStateTime > 0 && !oldDebauncedState){
-                        OnKeyDown.emit(
-                            PressEvent{
-                                .key = key,
-                                .time = keyState.currentStateTime
-                            }
-                        );
+                    
+                    if (oldDebauncedState != keyState.debauncedState){
+                        if (oldDebauncedState){
+                            OnKeyUp.emit(
+                                PressEvent{
+                                    .key = key,
+                                    .totalTime = 0
+                                }
+                            );
+
+                            OnKeyPress.emit(
+                                PressEvent{
+                                    .key = key,
+                                    .totalTime = keyState.currentStateTime
+                                }
+                            );
+                        }
+                        else {
+                            OnKeyDown.emit(
+                                PressEvent{
+                                    .key = key,
+                                    .totalTime = 0
+                                }
+                            );
+                        }
                     }
                 }
             }
         }
-
-
-//}
+    //}
 };
 
 #endif
