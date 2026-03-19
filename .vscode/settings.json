@@ -1,3 +1,4 @@
 {
-  "dev.containers.dockerPath": "podman"
+  "dev.containers.dockerPath": "podman",
+  "C_Cpp.errorSquiggles": "enabled"
 }
