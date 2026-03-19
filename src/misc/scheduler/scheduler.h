@@ -73,6 +73,8 @@ public:
     {}
 };
 
+#define shr_tmdtsk shared_ptr<TimedTask>
+
 
 
 

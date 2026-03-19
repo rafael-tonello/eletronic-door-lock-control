@@ -99,7 +99,7 @@ namespace ProcessChain{
         
         //resolve the promise with the data
         void post(T data, String debugInfo = "")
-        {  
+        {
             if (alreadyPosted)
             {
                 Serial.println("[error][AsyncProcessChain] posting data in already posted asyncprocesschain (promise)");
