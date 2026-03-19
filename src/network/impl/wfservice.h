@@ -1,0 +1,131 @@
+/**
+ * Storage structure used by WIFI service
+ * 
+ *  wifi
+ *      current "current ssid"
+ *      knownssids
+ *          list "ssid 1; ssid2; ssid3; current ssid; ssid 4"
+ *          ssid 1
+ *              password "the ssid psssword"
+ *          ssid 2
+ *              password "the ssid psssword"
+*/
+
+#ifndef __WFSERVICE_H__
+#define __WFSERVICE_H__
+
+#if defined(ESP8266)
+    #include <ESP8266WiFi.h> 
+#elif defined(ESP32)
+    #include <WiFi.h>
+#endif
+
+#include <Esp.h>
+#include <tuple>
+#include <eventstream.h>
+#include <scheduler.h>
+#include <scheduler/misc/promise.h>
+#include "../iconservice.h"
+#include "ilogger.h"
+#include <errors/errors.h>
+#include <stringutils.h>
+#include <istorage.h>
+
+using namespace std;
+using namespace ProcessChain;
+
+struct NetworkInfo{
+    String ssid;
+    int32_t rssid_dBm;
+};
+
+struct SavedNetworkInfo{
+    NetworkInfo networkInfo;
+    String password;
+    int index;
+};
+
+class WFService: public IConService{
+public:
+    enum WFServiceState{ //use custom state set instead of IConServiceBasicStates (but keep its values - DISCONNECTED=0, CONNECTING=1, CONNECTED=2)
+        //IConServiceBasicStates states
+        //DISCONNECTED = 0, 
+        //CONNECTING = 1, 
+        //CONNECTED = 2, 
+
+        //custom states
+        BEGIN=3, 
+        STARTING_AP=4, 
+        AP_STARTED=5
+    };
+    struct WifiConInfo{
+        String ip;
+        String gatewayIp;
+        String broadcastIp;
+    };
+
+    int connectToASsidRetryCount = 0;
+
+    void preparePins();
+private:
+    shared_ptr<TimedTask> monitoringConnectionTask = nullptr;
+    uint count = 0;
+    uint milissecondsCount = 0;
+    String connectedSsid = "";
+
+    void showAvailableWifiNetworks();
+    void displayAddressInfo(WifiConInfo info);
+
+    void wifiMachineState();
+    void monitorWifi();
+    Scheduler &scheduler;
+    //evtbus MessageBusTp *messageBus;
+    NamedLog nLog;
+    IStorage &storage;
+
+    /**
+     * @brief Create a new Ssid to be used as the AP name. The password will be allwais '12345678'
+     * 
+     * @return tuple<String, String> A tuple with the format {ssid_name, '12345678'}
+     */
+    tuple<String, String> getAPSsidAndPassword();
+    //void handleEventBusOperations();
+
+    String wlStateToString(wl_status_t status);
+
+    /*not pure*/void connectProcess();
+    Promise<NetworkInfo>::smp_t getLastUsedNetwork();
+    
+    
+    Promise<Error>::smp_t connectToNetwork(NetworkInfo network);
+    Promise<ResultWithStatus<String>>::smp_t getNetworkdPassword(NetworkInfo network);
+    
+    Promise<TpNothing>::smp_t registerKnownNetwork(String ssid, String password);
+    Promise<String>::smp_t getServiceInfo();
+    void stopMonitorCurrentConnection();
+    void startMonitoringCurrentConnection();
+public:
+    WFService(Scheduler &scheduler/*, MessageBusTp *messageBus*/, ILogger& logService, IStorage &storage): scheduler(scheduler), storage(storage){
+        this->nLog = logService.getNLog("WFService");
+    }
+
+    
+    //automatically manage the wifi (try connect, start acces point, ...)
+    Promise<Error>::type autoConnectOrCreateAp();
+    shared_ptr<Client> createClient();
+    
+    WifiConInfo getWifiCliAddrInfo();
+    WifiConInfo getWifiApAddrInfo();
+    String stateToString(IConServiceState state);
+
+    //function for 'manual' wifi management
+    Promise<vector<NetworkInfo>>::smp_t getAvailableNetworks();
+    Promise<vector<SavedNetworkInfo>>::smp_t getRegisteredNetworks(bool onlyCurrentAvailableNetworks = true);
+    Promise<Error>::smp_t deleteRegisteredNetwork(int index);
+    Promise<TpNothing>::smp_t startAccessPoint();
+    /*not pure*/Promise<Error>::smp_t connectToNetwork(String ssid, String password);
+
+    
+};
+
+#endif
