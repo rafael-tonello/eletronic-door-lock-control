@@ -25,7 +25,7 @@
 #include <eventstream.h>
 #include <scheduler.h>
 #include <scheduler/misc/promise.h>
-#include "../iconservice.h"
+#include "../inetwork.h"
 #include "ilogger.h"
 #include <errors/errors.h>
 #include <stringutils.h>
@@ -45,23 +45,24 @@ struct SavedNetworkInfo{
     int index;
 };
 
-class WFService: public IConService{
+class WFService: public INetwork{
 public:
     enum WFServiceState{ //use custom state set instead of IConServiceBasicStates (but keep its values - DISCONNECTED=0, CONNECTING=1, CONNECTED=2)
         //IConServiceBasicStates states
-        //DISCONNECTED = 0, 
-        //CONNECTING = 1, 
-        //CONNECTED = 2, 
+        //DISCONNECTED = 0, //0 to 10 is disconnected states
+        //CONNECTING = 10, //10 to 20 is connecting states
+        //CONNECTED = 20, //20 to 30 is connected states
 
         //custom states
-        BEGIN=3, 
-        STARTING_AP=4, 
-        AP_STARTED=5
+        BEGIN=2, 
+        STARTING_AP=11,
+        AP_STARTED=21
     };
     struct WifiConInfo{
         String ip;
         String gatewayIp;
         String broadcastIp;
+        NetworkInfo networkInfo;
     };
 
     int connectToASsidRetryCount = 0;
@@ -112,7 +113,18 @@ public:
     
     //automatically manage the wifi (try connect, start acces point, ...)
     Promise<Error>::type autoConnectOrCreateAp();
-    shared_ptr<Client> createClient();
+    //create a new client. Destination is used to specify the server to be connected
+    // Connect to a tcp server: tcp://ip:port
+    // Connect to a udp server: udp://ip:port
+    //if destination is empty, you will need to call the client's connect() method and init the client by yourself
+    tuple<shared_ptr<Client>, Error> createClient(String destination = "") override;
+
+
+    //create a server. Origin is used to specify the port to be listened:
+    // for a tcp server tcp://port
+    // for a udp server udp://port
+    //if origin is empty, you will need to call the server->begin() method and init the server by yourself. In this case, an error will also be returned
+    tuple<shared_ptr<WiFiServer>, Error> createServer(String origin = "") override;
     
     WifiConInfo getWifiCliAddrInfo();
     WifiConInfo getWifiApAddrInfo();
@@ -122,6 +134,12 @@ public:
     Promise<vector<NetworkInfo>>::smp_t getAvailableNetworks();
     Promise<vector<SavedNetworkInfo>>::smp_t getRegisteredNetworks(bool onlyCurrentAvailableNetworks = true);
     Promise<Error>::smp_t deleteRegisteredNetwork(int index);
+    Promise<Error>::smp_t deleteRegisteredNetwork(String indexOrSsid);
+    Promise<Error>::smp_t deleteAllRegisteredNetworks();
+    Promise<Error>::smp_t addOrUpdateRegisteredNetwork(String ssid, String password);
+    Promise<Error>::smp_t changeRegisteredNetwork(String indexOrSsid, String newSsid, String newPassword);
+    Promise<ResultWithStatus<int>>::smp_t getRegisteredNetworkIndex(String indexOrSsid);
+    Promise<ResultWithStatus<SavedNetworkInfo>>::smp_t getRegisteredNetwork(String indexOrSsid);
     Promise<TpNothing>::smp_t startAccessPoint();
     /*not pure*/Promise<Error>::smp_t connectToNetwork(String ssid, String password);
 

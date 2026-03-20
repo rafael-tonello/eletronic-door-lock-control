@@ -292,6 +292,11 @@ WFService::WifiConInfo WFService::getWifiCliAddrInfo()
     ret.ip = String(WiFi.localIP().toString().c_str());
     ret.gatewayIp = String(WiFi.gatewayIP().toString().c_str());
     ret.broadcastIp = "";
+
+    ret.networkInfo = NetworkInfo{
+        .ssid = WiFi.SSID(),
+        .rssid_dBm = WiFi.RSSI()
+    };
     
     if (ret.gatewayIp.indexOf('.') > -1){
         ret.broadcastIp = ret.gatewayIp.substring(0, ret.gatewayIp.lastIndexOf('.')) + ".255";
@@ -306,6 +311,11 @@ WFService::WifiConInfo WFService::getWifiApAddrInfo()
     ret.ip = String(WiFi.softAPIP().toString().c_str());
     ret.gatewayIp = String(WiFi.softAPIP().toString().c_str());
     ret.broadcastIp = "";
+
+    ret.networkInfo = NetworkInfo{
+        .ssid = WiFi.softAPSSID(),
+        .rssid_dBm = 0
+    };
 
     if (ret.gatewayIp.indexOf('.') > -1)
         ret.broadcastIp = ret.gatewayIp.substring(0, ret.gatewayIp.lastIndexOf('.')) + ".255";
@@ -351,9 +361,54 @@ tuple<String, String> WFService::getAPSsidAndPassword()
     return {"TERLA_NC_"+String(chipId), "12345678"};
 }
 
-shared_ptr<Client> WFService::createClient()
+tuple<shared_ptr<Client>, Error> WFService::createClient(String destination)
 {
-    return std::move(shared_ptr<Client>(new WiFiClient()));
+    if (destination == "")
+        return {shared_ptr<Client>(new WiFiClient()), Errors::NoError};
+    //get text until '://'
+    auto protocol = destination.substring(0, destination.indexOf("://"));
+    destination = destination.substring(destination.indexOf("://")+3);
+
+    if (destination != "tcp")
+        return {nullptr, Errors::createError("invalid protocol. Currently only 'tcp' is supported")};
+
+    //get the host (until ':')
+    auto host = destination.substring(0, destination.indexOf(":"));
+    //get the port (after ':')
+    auto port = destination.substring(destination.indexOf(":")+1).toInt();
+
+    auto theClient = shared_ptr<Client>(new WiFiClient());
+
+    theClient->connect(host.c_str(), port);
+
+    return {theClient, Errors::NoError};
+
+
+}
+
+
+//create a server. Origin is used to specify the port to be listened:
+// for a tcp server tcp://port
+// for a udp server udp://port
+//if origin is empty, you will need to call the server->begin() method and init the server by yourself. In this case, an error will also be returned
+tuple<shared_ptr<WiFiServer>, Error> WFService::createServer(String origin)
+{
+    if (origin == "")
+        return make_tuple<shared_ptr<WiFiServer>, Error>(nullptr, Errors::createError("invalid origin. Origin cannot be empty"));
+        
+    //get text until '://'
+    auto protocol = origin.substring(0, origin.indexOf("://"));
+    origin = origin.substring(origin.indexOf("://")+3);
+
+    if (protocol != "tcp")
+        return make_tuple<shared_ptr<WiFiServer>, Error>(nullptr, Errors::createError("invalid protocol. Currently only 'tcp' is supported"));
+
+    auto port = origin.toInt();
+
+    shared_ptr<WiFiServer> result = make_shared<WiFiServer>(port);
+    result->begin();
+
+    return make_tuple(result, Errors::NoError);
 }
 
 String WFService::stateToString(IConServiceState state)
@@ -532,6 +587,174 @@ Promise<Error>::smp_t WFService::deleteRegisteredNetwork(int index)
     this->storage.remove(SR("wifi.knownssids.?.password", {ssid}));
     this->storage.set("wifi.knownssids.index.count", String(count.toInt()-1));
     ret->post(Errors::NoError);
+    return ret;
+}
+
+Promise<ResultWithStatus<int>>::smp_t WFService::getRegisteredNetworkIndex(String indexOrSsid)
+{
+    auto ret = Promise<ResultWithStatus<int>>::get_smp();
+
+    bool isNumber = true;
+    for (size_t i = 0; i < indexOrSsid.length(); i++)
+    {
+        if (!isDigit(indexOrSsid[i]))
+        {
+            isNumber = false;
+            break;
+        }
+    }
+
+    if (indexOrSsid == "")
+        isNumber = false;
+
+    if (isNumber)
+    {
+        ret->post(ResultWithStatus<int>(indexOrSsid.toInt(), Errors::NoError));
+        return ret;
+    }
+
+    auto idx = storage.get(SR("wifi.knownssids.?.index", {indexOrSsid}), "");
+    if (idx == "")
+    {
+        ret->post(ResultWithStatus<int>(-1, Errors::NotFound));
+        return ret;
+    }
+
+    ret->post(ResultWithStatus<int>(idx.toInt(), Errors::NoError));
+    return ret;
+}
+
+Promise<Error>::smp_t WFService::deleteRegisteredNetwork(String indexOrSsid)
+{
+    auto ret = Promise<Error>::get_smp();
+    getRegisteredNetworkIndex(indexOrSsid)->then([=](ResultWithStatus<int> idxResult){
+        if (idxResult.status != Errors::NoError)
+        {
+            ret->post(Errors::NotFound);
+            return;
+        }
+
+        deleteRegisteredNetwork(idxResult.result)->then([=](Error err){
+            ret->post(err);
+        });
+    });
+
+    return ret;
+}
+
+Promise<Error>::smp_t WFService::deleteAllRegisteredNetworks()
+{
+    auto ret = Promise<Error>::get_smp();
+
+    auto count = storage.get("wifi.knownssids.index.count", "0").toInt();
+    for (int i = 0; i < count; i++)
+    {
+        auto ssid = storage.get(SR("wifi.knownssids.index.?", {String(i)}), "");
+        storage.remove(SR("wifi.knownssids.index.?", {String(i)}));
+        if (ssid != "")
+        {
+            storage.remove(SR("wifi.knownssids.?.index", {ssid}));
+            storage.remove(SR("wifi.knownssids.?.password", {ssid}));
+        }
+    }
+
+    storage.set("wifi.knownssids.index.count", "0");
+    storage.set("wifi.current", "");
+    ret->post(Errors::NoError);
+    return ret;
+}
+
+Promise<Error>::smp_t WFService::addOrUpdateRegisteredNetwork(String ssid, String password)
+{
+    auto ret = Promise<Error>::get_smp();
+
+    if (ssid == "")
+    {
+        ret->post(Errors::createError("SSID cannot be empty"));
+        return ret;
+    }
+
+    auto existingIndex = storage.get(SR("wifi.knownssids.?.index", {ssid}), "");
+    if (existingIndex != "")
+    {
+        storage.set(SR("wifi.knownssids.?.password", {ssid}), password);
+        ret->post(Errors::NoError);
+        return ret;
+    }
+
+    auto countStr = storage.get("wifi.knownssids.index.count", "0");
+    auto newIndex = countStr.toInt();
+
+    storage.set(SR("wifi.knownssids.index.?", {String(newIndex)}), ssid);
+    storage.set(SR("wifi.knownssids.?.password", {ssid}), password);
+    storage.set(SR("wifi.knownssids.?.index", {ssid}), String(newIndex));
+    storage.set("wifi.knownssids.index.count", String(newIndex + 1));
+
+    ret->post(Errors::NoError);
+    return ret;
+}
+
+Promise<ResultWithStatus<SavedNetworkInfo>>::smp_t WFService::getRegisteredNetwork(String indexOrSsid)
+{
+    auto ret = Promise<ResultWithStatus<SavedNetworkInfo>>::get_smp();
+
+    getRegisteredNetworkIndex(indexOrSsid)->then([=](ResultWithStatus<int> idxResult){
+        if (idxResult.status != Errors::NoError)
+        {
+            ret->post(ResultWithStatus<SavedNetworkInfo>(SavedNetworkInfo{}, Errors::NotFound));
+            return;
+        }
+
+        auto idx = idxResult.result;
+        auto count = storage.get("wifi.knownssids.index.count", "0").toInt();
+        if (idx < 0 || idx >= count)
+        {
+            ret->post(ResultWithStatus<SavedNetworkInfo>(SavedNetworkInfo{}, Errors::NotFound));
+            return;
+        }
+
+        auto ssid = storage.get(SR("wifi.knownssids.index.?", {String(idx)}), "");
+        if (ssid == "")
+        {
+            ret->post(ResultWithStatus<SavedNetworkInfo>(SavedNetworkInfo{}, Errors::NotFound));
+            return;
+        }
+
+        auto password = storage.get(SR("wifi.knownssids.?.password", {ssid}), "");
+        SavedNetworkInfo info;
+        info.index = idx;
+        info.password = password;
+        info.networkInfo = NetworkInfo{.ssid = ssid, .rssid_dBm = -100};
+        ret->post(ResultWithStatus<SavedNetworkInfo>(info, Errors::NoError));
+    });
+
+    return ret;
+}
+
+Promise<Error>::smp_t WFService::changeRegisteredNetwork(String indexOrSsid, String newSsid, String newPassword)
+{
+    auto ret = Promise<Error>::get_smp();
+
+    getRegisteredNetworkIndex(indexOrSsid)->then([=](ResultWithStatus<int> idxResult){
+        if (idxResult.status != Errors::NoError)
+        {
+            ret->post(Errors::NotFound);
+            return;
+        }
+
+        deleteRegisteredNetwork(idxResult.result)->then([=](Error delErr){
+            if (delErr != Errors::NoError)
+            {
+                ret->post(delErr);
+                return;
+            }
+
+            addOrUpdateRegisteredNetwork(newSsid, newPassword)->then([=](Error addErr){
+                ret->post(addErr);
+            });
+        });
+    });
+
     return ret;
 }
 
