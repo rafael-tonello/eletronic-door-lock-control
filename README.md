@@ -16,7 +16,7 @@ The architecture is being designed to make migration to other microcontrollers e
 
 ## Code Structure
 
-All logic related to door lock control is implemented in `main.cpp` and the `main.*` files.
+All logic related to door lock control is implemented in `main.cpp` and the `main.*` files. All other files and modules are project independent and can be easy used in another projects.
 
 ### `iohal`
 
