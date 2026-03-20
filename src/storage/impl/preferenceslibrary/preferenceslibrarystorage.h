@@ -9,9 +9,9 @@ public:
     PreferencesLibraryStorage();
     ~PreferencesLibraryStorage();
     Preferences storage;
-    Scheduler *scheduler;
+    Scheduler &scheduler;
 public: /* IStorage interface */
-    PreferencesLibraryStorage(Scheduler *scheduler);
+    PreferencesLibraryStorage(Scheduler &scheduler);
     String get(String key, String defaulValue = "") override;
     void set(String key, String value) override;
     bool has(String key) override;

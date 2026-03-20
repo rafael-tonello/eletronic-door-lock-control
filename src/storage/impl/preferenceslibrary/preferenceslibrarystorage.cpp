@@ -1,8 +1,7 @@
 #include "preferenceslibrarystorage.h"
 
-PreferencesLibraryStorage::PreferencesLibraryStorage(Scheduler *scheduler)
+PreferencesLibraryStorage::PreferencesLibraryStorage(Scheduler &scheduler): scheduler(scheduler)
 {
-    this->scheduler = scheduler;
     storage.begin("storage");
     
 }
@@ -140,7 +139,7 @@ void PreferencesLibraryStorage::eraseAll()
 
 Promise<String>::smp_t PreferencesLibraryStorage::pGet(String key, String defaultValue){
     auto ret = Promise<String>::get_smp();
-    this->scheduler->run([=](){
+    this->scheduler.run([=](){
         auto data = this->get(key, defaultValue);
         ret->resolve(data);
     }, "", DEFAULT_PRIORITIES::VERY_LOW);
@@ -150,7 +149,7 @@ Promise<String>::smp_t PreferencesLibraryStorage::pGet(String key, String defaul
 
 Promise<TpNone>::smp_t PreferencesLibraryStorage::pSet(String key, String value){
     auto ret = Promise<TpNone>::get_smp();
-    this->scheduler->run([=](){
+    this->scheduler.run([=](){
         this->set(key, value);
         ret->resolve(Nothing);
     }, "", DEFAULT_PRIORITIES::VERY_LOW);
@@ -160,7 +159,7 @@ Promise<TpNone>::smp_t PreferencesLibraryStorage::pSet(String key, String value)
 
 Promise<bool>::smp_t PreferencesLibraryStorage::pHas(String key){
     auto ret = Promise<bool>::get_smp();
-    this->scheduler->run([=](){
+    this->scheduler.run([=](){
         auto hasValue = this->has(key);
         ret->resolve(hasValue);
     }, "", DEFAULT_PRIORITIES::VERY_LOW);
@@ -169,7 +168,7 @@ Promise<bool>::smp_t PreferencesLibraryStorage::pHas(String key){
 
 Promise<TpNone>::smp_t PreferencesLibraryStorage::pRemove(String key){
     auto ret = Promise<TpNone>::get_smp();
-    this->scheduler->run([=](){
+    this->scheduler.run([=](){
         this->remove(key);
         ret->resolve(Nothing);
     }, "", DEFAULT_PRIORITIES::VERY_LOW);
