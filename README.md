@@ -18,6 +18,49 @@ The architecture is being designed to make migration to other microcontrollers e
 
 All logic related to door lock control is implemented in `main.cpp` and the `main.*` files. All other files and modules are project independent and can be easy used in another projects.
 
+### code organizadion
+```
+  project
+    ├── main.cpp -> initializes the modules and provides the dependency injection
+    ├── main.lockcontrol.h -> contains the phisical look device control 
+    ├── main.telnetui.h -> contains the telnet UI control, which is a simple 
+    |                      telnet user interface to configure and interact with 
+    |                      the system
+    ├── iohal
+    |     ├── iohal.h -> defines the I/O abstraction layer interface
+    |     ├── impl
+    |          ├── esp8266IOHal.h -> ESP8266-specific I/O implementation
+    |          ├── esp8266IOHal.cpp
+    ├── keyboard
+    |     ├── keyboard.h -> defines the keyboard interface and event model
+    |     ├── impl
+    |          ├── GenericIIOHalKeyboard.h -> keyboard implementation based on 
+    |                                         the I/O HAL 
+    |          ├── GenericIIOHalKeyboard.cpp
+    ├── storage
+    |    ├── storage.h -> defines the storage interface and key-shortening strategy
+    |    ├── impl
+    |         ├── preferenceslibrary
+    |              ├── preferenceslibrary.h -> implementation based on Preferences
+    |              |                           library for esp8266
+    |              ├── preferenceslibrary.cpp
+    |         ├── nvsstorage
+    |              ├── nvsstorage.h -> implementation based on NVS for esp32
+    |              ├── nvsstorage.cpp
+    ├── network
+    |    ├── inetwork.h -> defines the connection service interface and network 
+    |    |                 state model
+    |    ├── impl
+    |         ├── wfservice
+    |              ├── wfservice.h -> Wi-Fi connection service implementation for ESP
+    |              ├── wfservice.cpp
+    ├── log
+         ├── ilogger.h -> defines the logging interface and holds the 
+         |                default ilogger implementation
+         ├── ilogger.cpp
+
+```
+
 ### `iohal`
 
 `iohal` is the **Hardware Abstraction Layer (HAL)**.
@@ -90,30 +133,52 @@ Inside `misc/scheduler/misc`, the Promise system (`Promise`, `AsyncProcessChain`
 Utilities such as `runFsInOrder` and `WaitPromises` help compose async flows cleanly, reducing nested callback code and improving readability.
 
 ## Architecture Overview
-
 High-level component interaction:
+<!-- 🠜 🠞 🠟 🠝 -->
 
-	main / door-lock logic
-			|
-			+--> scheduler + promise chain (execution model)
-			|
-			+--> keyboard (input events)
-			|
-			+--> iohal (hardware abstraction)
-			|
-			+--> storage (persistent configuration/state)
-			|
-			+--> tcpconnection/network (Wi-Fi and client connections)
-			|
-			+--> log (observability)
+```
 
-Typical runtime flow:
+       main/business
+  ╔════════════════════╗	
+  ║ main-telnet-UI ----------1------🠞 telnetserver
+  ║  🠝                 ║                   |
+  ║  |                 ║              +----+
+  ║ main-lock-control ----+           2
+  ║  |    🠝            ║  |           |
+  ║  |3   |4           ║  |           🠟
+  ║  +- main           ║  |          wifi
+  ║       🠝            ║  |           |
+  ╚═══════|════════════╝  |           5
+          6               7           |
+          |               |           +--> storage
+          +--- keyboard   |           |
+                  |       |        +--+
+                  |     +-+        8
+                  9     |          |
+                  |     |          🠟
+                  |     |    log manager
+                  🠟     |        |
+                iohal <-+        10
+                  |              |
+                  11             🠟
+                  |          esp serial
+                  |
+                  🠟
+            esp phisical i/o
 
-1. `main` initializes infrastructure modules (`scheduler`, `log`, `storage`, `network`, input, and HAL).
-2. Inputs and connection events are converted into asynchronous operations.
-3. Operations are scheduled with priorities and optional delays/periodicity.
-4. State is persisted through `storage` and relevant transitions are logged.
-5. The application loop calls the scheduler to cooperatively execute pending work.
+  1) Telnet UI (a main extension) uses telnet server to provide a user interface
+  2) Telnet server uses wifi to provide network connectivity
+  3) main isolates the User Interface (a main extension) logic in main-telnet-UI
+  4) main isolates the door lock control (a main extension) logic in main-lock-control
+  5) wifi uses storage to persist network credentials and state
+  6) Keyboard emit events, that main uses to trigger lock and unlock actions
+  7) main lock control extensions uses iohal to control the physical lock device
+  8) wifi manager uses log manager to log important events and errors
+  9) keyboard uses iohal to read key states
+  10) log manager uses esp serial to output logs
+  11) iohal uses the esp physical I/O to read and write to the hardware pins
+  
+```
 
 ## Status
 
