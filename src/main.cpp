@@ -1,21 +1,94 @@
 #include <Arduino.h>
-#include <scheduler.h>
-#include <ikeyboard.h>
+#include <ArduinoOTA.h>
 #include <errors/errors.h>
+
+#include <scheduler.h>
+
+#include <ikeyboard.h>
+#include <keyboard/impl/GenericIIOHalKeyboard.h>
+
+#include <iiohal.h>
+#include <iohal/impl/esp8266IOHal.h>
+
+#include <ilogger.h>
+
+#include <istorage.h>
+#include <storage/impl/preferenceslibrary/preferenceslibrarystorage.h>
+
+#include <inetwork.h>
+
+#include <network/inetwork.h>
+#include <network/impl/wfservice.h>
+
+#include <telnet/telnetserver.h>
+
+#include "main.telnetui.h"
 
 Scheduler scheduler;
 
+IIOHal *hal;
+ILogger *logService;
+IStorage *storage;
+INetwork *conService;
 IKeyboard* keyboard; //= new KeyBoardImplementation();
+TelnetServer *telnetInterface; //= new TelnetServer(*logService, *storage, *conService, scheduler);
+MainTelnetUI* mainTelnetUI;
+bool otaStarted = false;
+
+bool tmp = false;
 
 void setup() {
+    String initailTelnetBanner = "\n";
+    initailTelnetBanner += "===========================\n"; 
+    initailTelnetBanner += "     Door lock control     \n"; 
+    initailTelnetBanner += "===========================\n";
+
+
+
     Serial.begin(115200);
-    scheduler.periodicTask(1000, [](){
-        Serial.println("Hello world!");
+    delay(1000);
+
+    ArduinoOTA.setHostname("espota");
+    ArduinoOTA.begin();
+
+    hal = new ESP8266IOHal();
+    keyboard = new GenericIIOHalKeyboard(*hal, scheduler, {IOHAL_D1});
+    logService = new DefaultLogger();
+    storage = new PreferencesLibraryStorage(scheduler);
+    conService = new WFService(scheduler, *logService, *storage);
+    Serial.println("conservice address: " + String((uintptr_t)conService));
+
+    telnetInterface = new TelnetServer(initailTelnetBanner, "humandis", scheduler, *storage, *conService, *logService);
+
+
+
+    mainTelnetUI = new MainTelnetUI(*hal, *logService, *storage, *conService, *keyboard, *telnetInterface);
+
+    ((WFService*)conService)->connectToNetwork("Tonello", "tetelateteka")->then([&](Error err){
+        
     });
+
+
+    scheduler.periodicTask(100 MilliSeconds, [&](){
+        auto v = hal->Read(IOHAL_D3).Digital();
+        if (v != tmp){
+            tmp = v;
+            if (v)
+                logService->log(LogLevel::INFO, "debuging", "HIGH");
+            else
+                logService->log(LogLevel::INFO, "debuging", "LOW");
+        }
+    });
+
+
+    //((WFService*)conService)->autoConnectOrCreateAp();
+    
+
 }
 
 void loop() {
     scheduler.run_one_round_of_tasks();
+    ArduinoOTA.handle();
 }
 
 
