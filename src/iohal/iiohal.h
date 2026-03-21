@@ -25,15 +25,24 @@ using namespace std;
 
 extern Error ERROR_InvalidIO;
 
-enum IOMODE {
-    IOM_INPUT, //pin can be only readed
-    IOM_OUTPUT, //pin can be only writed
-    IOM_DUPLEX, //pin can be both read and written (and it can be changed at runtime)
+//the configuration of the pins
+enum DESIRED_PIN_MODE {
+    DPT_INPUT, //pin can be only readed
+    DPT_OUTPUT, //pin can be only writed
+    DPT_DUPLEX, //Pin can be changed between input and output using SetRawPinMode
 };
 
-enum RawPinMode{
-    RPM_INPUT,
-    RPM_OUTPUT
+//the current real pin mode
+enum PHYSICAL_PIN_MODE{
+    PPM_UNKNOWN,
+    PPM_INPUT,
+    PPM_OUTPUT,
+};
+
+struct IHAL_PIN_INFO{
+    IIOHAL_IO_ID_TYPE id;
+    DESIRED_PIN_MODE desiredType;
+    PHYSICAL_PIN_MODE currentPhysicalPinMode;
 };
 
 //class IClient;
@@ -96,11 +105,16 @@ protected:
     virtual Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value) = 0;
 
 public: 
-    virtual tuple<IOMODE, Error> GetIOMode(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    //returns the current real state and the configured desired state of an IO
+    virtual tuple<IHAL_PIN_INFO, Error> GetIOInfo(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    virtual vector<IHAL_PIN_INFO> GetAllAvailableIOSInfos() = 0;
+    
+    //set the physical pin mode, for example, if a pin is configured as duplex, this function can be used to change it between input and output
+    virtual Error SetPhysicalPinMode(IIOHAL_IO_ID_TYPE ioNumber, PHYSICAL_PIN_MODE mode) = 0;
+    
     virtual tuple<bool, Error> IsAnalogic(IIOHAL_IO_ID_TYPE ioNumber) = 0;
-    virtual Error SetRawPinMode(IIOHAL_IO_ID_TYPE ioNumber, RawPinMode mode) = 0;
 
-    virtual vector<tuple<IIOHAL_IO_ID_TYPE, IOMODE>> GetAvailableIOS() = 0;
+
 
     //return an analogic pin id (or IOHAL_INVALID_IO if unavailable)
     virtual IIOHAL_IO_ID_TYPE GetIdAn(size_t index) = 0;
@@ -174,12 +188,17 @@ public:
             //check if io is setted to be an output and autoChangeIOMode is true, if so change it to input
             if (defaultOptions.autoChangeIOMOde){
                 //read current mode of io
-                auto [currentMode, err] = GetIOMode(ioNumber);
+                auto [ioInfo, err] = GetIOInfo(ioNumber);
                 if (err != Errors::NoError){
                     return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
                 }
-                if (currentMode == OUTPUT){
-                    SetRawPinMode(ioNumber, RPM_INPUT);
+
+                if (ioInfo.desiredType == DPT_OUTPUT){
+                    return ReadResult(0, Errors::createError("IO is configured as output, cannot read"), defaultOptions.maxValueForAnalogic);
+                }
+
+                if (ioInfo.currentPhysicalPinMode != PPM_INPUT){
+                    SetPhysicalPinMode(ioNumber, PPM_INPUT);
                 }
             }
 
@@ -206,6 +225,7 @@ public:
                 if (err2 != Errors::NoError){
                     return ReadResult(0, err2, defaultOptions.maxValueForAnalogic);
                 }
+
                 analogValue = digitalValue ? defaultOptions.maxValueForAnalogic : 0;
             }
 
@@ -244,13 +264,17 @@ public:
             //check if io is setted to be an input and autoChangeIOMode is true, if so change it to output
             if (defaultOptions.autoChangeIOMOde){
                 //read current mode of io
-                auto [currentMode, err] = GetIOMode(ioNumber);
+                auto [ioInfo, err] = GetIOInfo(ioNumber);
                 if (err != Errors::NoError){
                     return err;
                 }
 
-                if (currentMode == IOM_INPUT){
-                    SetRawPinMode(ioNumber, RPM_OUTPUT);
+                if (ioInfo.desiredType == DPT_INPUT){
+                    return Errors::createError("IO is configured as input, cannot write");
+                }
+
+                if (ioInfo.currentPhysicalPinMode != PPM_OUTPUT){
+                    SetPhysicalPinMode(ioNumber, PPM_OUTPUT);
                 }
             }
 
@@ -264,6 +288,7 @@ public:
             }
 
             if (isAnalogic){
+
                 err = InternalAnalogWrite(ioNumber, value.value);
                 if (err != Errors::NoError){
                     return err;
