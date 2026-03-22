@@ -4,6 +4,7 @@
 #include <functional>
 #include <HardwareSerial.h>
 #include <memory>
+#include <eventstream.h>
 
 using namespace std;
  
@@ -11,21 +12,41 @@ enum LogLevel {DEBUG, INFO, WARNING, ERROR, CRITICAL};
 
 class NamedLog;
 
+struct ILoggerObservingItem{
+    String name;
+    LogLevel level;
+    String msg;
+    bool breakLine;
+};
+
 class ILogger { 
 protected:
     String LogLevelToString(LogLevel logLevel);
     String getDateTimeInfo();
 
-    String identMsg(String msg, int identationSize);
+    
+    bool isANewLine = true;
+    String newLineOwnerName = "";
+    
+    //must be override by implementations
+    virtual void logIt(LogLevel level, String name, String msg, bool breakLine = true) = 0;
+    
+
+    
 public: 
+    EventStream<ILoggerObservingItem> OnLog;
     virtual ~ILogger() = default;
 
-
-    //must be override by implementations
-    virtual void log(LogLevel level, String name, String msg, bool breakLine = true) = 0;
-
-    //can be override by implementations, but it is not mandatory
+    //can be override by implementations, but it is not mandatory. It must call OnLog.emit to do the actual logging
+    virtual void log(LogLevel level, String name, String msg, bool breakLine = true);
+    //can be override by implementations, but it is not mandatory. Is must call OnLog.emit to do the actual logging
     virtual void log(String name, String msg, bool breakLine = true);
+    
+    //a helper that generate a line header in the format [date time] [log level] [name]
+    virtual String MountLineHeader(LogLevel level, String name);
+    
+    //a helper that ident the message with the specified number of spaces (usefull to align multiline messages)
+    String identMsg(String msg, int identationSize);
 
     NamedLog getNLog(String name);
     shared_ptr<NamedLog> getNLogP(String name);
@@ -94,12 +115,10 @@ public:
 
 class DefaultLogger: public ILogger{
 private:
-    bool isANewLine = true;
-    String newLineOwnerName = "";
-    function<void(String)> logInterceptor = [](String nl){};
+    String lastHeader = "";
 
 public:
-    void log(LogLevel level, String name, String msg, bool breakLine = true) override;
+    void logIt(LogLevel level, String name, String msg, bool breakLine = true) override;
 
 };
  

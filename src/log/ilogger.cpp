@@ -1,5 +1,16 @@
 #include  "ilogger.h" 
 
+void ILogger::log(LogLevel level, String name, String msg, bool breakLine)
+{
+    this->logIt(level, name, msg, breakLine);
+    OnLog.emit(ILoggerObservingItem{
+        .name = name,
+        .level = level,
+        .msg = msg,
+        .breakLine = breakLine
+    });
+}
+
 void ILogger::log(String name, String msg, bool breakLine)
 {
     this->log(LogLevel::INFO, name, msg, breakLine);
@@ -61,9 +72,20 @@ String ILogger::identMsg(String msg, int identationSize)
     return msg;
 }
 
+String ILogger::MountLineHeader(LogLevel level, String name)
+{
+    String header = "";
+    String dateTime = getDateTimeInfo();
+    if (dateTime != "")
+        header = "["+dateTime+"] "+ header;
 
+    header += "["+LogLevelToString(level)+"] ";
+    header += "["+name+"] ";
 
-void DefaultLogger::log(LogLevel level, String name, String msg, bool breakLine)
+    return header;
+}
+
+void DefaultLogger::logIt(LogLevel level, String name, String msg, bool breakLine)
 {
     if (!isANewLine && newLineOwnerName != name)
     {
@@ -72,22 +94,21 @@ void DefaultLogger::log(LogLevel level, String name, String msg, bool breakLine)
     }
 
     String header = "";
+    int headerSize = 0;
     if (isANewLine == true)
     {
-        String dateTime = getDateTimeInfo();
-        if (dateTime != "")
-            header = "["+dateTime+"] "+ header;
-
-        header += "["+LogLevelToString(level)+"] ";
-        header += "["+name+"] ";
+        header = MountLineHeader(level, name);
+        lastHeader = header;
     }
 
-    msg = identMsg(msg, header.length());
+    headerSize = lastHeader.length();
+
+
+    msg = identMsg(msg, headerSize);
 
     msg = header + msg;
 
     Serial.print(msg.c_str());
-    logInterceptor(msg);
     //msg.clear();
 
     if (breakLine == true)
