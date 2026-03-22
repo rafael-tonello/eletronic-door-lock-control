@@ -76,8 +76,7 @@ public:
                     commandsMap[cmd](cli, onReadyFunc, args);
                 else
                 {
-                    if (cli.sendData != nullptr)
-                        cli.sendData("Unknown command: " + cmd);
+                    cli.sendData("Unknown command: " + cmd);
                     onReadyFunc();
                 }
             });
@@ -94,6 +93,10 @@ public:
 
         commandsMap["wifi"] = [=](TelnetServer::CliInfo &cli, function<void()> onReady, vector<String> args){
             wifiCommands(cli, onReady, args);
+        };
+
+        commandsMap["logs"] = [=](TelnetServer::CliInfo &cli, function<void()> onReady, vector<String> args){
+            logsCommands(cli, onReady, args);
         };
     }
 
@@ -125,6 +128,10 @@ public:
         cli.sendData("          change <id or ssid> <new ssid> <new password>");
         cli.sendData("                             - Add a saved network without connecting to it.");
         cli.sendData("          get <id or ssid>   - Get the ssid and password of a saved networ");
+        cli.sendData("  logs <subcommand>      - run wifi related commands. ");
+        cli.sendData("    subcommands:");
+        cli.sendData("      listen               - Start listening to logs.");
+        cli.sendData("      stop                 - Stop listening to logs.");
         onReady();
     }
 
@@ -132,12 +139,6 @@ public:
     {
         //auto wifi = static_cast<WFService*>(&conService);
         auto wifi = (WFService*)&conService;
-
-        if (cli.sendData == nullptr)
-        {
-            onReady();
-            return;
-        }
 
         if (args.size() == 0 || args[0] == "")
         {
@@ -148,11 +149,11 @@ public:
 
         auto sub = args[0];
 
-        if (sub == "list")
+        if (sub == "list" || sub == "stop")
         {
             cli.sendData("Scanning for WiFi networks...");
             delay(100);
-            wifi->getAvailableNetworks()->then([=](vector<NetworkInfo> nets){
+            wifi->getAvailableNetworks()->then([=, &cli](vector<NetworkInfo> nets){
                 if (nets.size() == 0)
                     cli.sendData("No WiFi networks found.");
                 else
@@ -184,7 +185,7 @@ public:
 
             auto ssid = args[1];
             auto password = args[2];
-            wifi->connectToNetwork(ssid, password)->then([=](Error err){
+            wifi->connectToNetwork(ssid, password)->then([=, &cli](Error err){
                 if (err == Errors::NoError)
                     cli.sendData("Connected to '" + ssid + "'.");
                 else
@@ -195,7 +196,7 @@ public:
         }
         else if (sub == "startAp")
         {
-            wifi->startAccessPoint()->then([=](TpNothing _void){
+            wifi->startAccessPoint()->then([=, &cli](TpNothing _void){
                 auto apInfo = wifi->getWifiApAddrInfo();
                 cli.sendData("Access point started.");
                 cli.sendData("  ip: " + apInfo.ip);
@@ -237,7 +238,7 @@ public:
             auto savedSub = args[1];
             if (savedSub == "list")
             {
-                wifi->getRegisteredNetworks(false)->then([=](vector<SavedNetworkInfo> nets){
+                wifi->getRegisteredNetworks(false)->then([=, &cli](vector<SavedNetworkInfo> nets){
                     if (nets.size() == 0)
                     {
                         cli.sendData("No saved networks.");
@@ -263,7 +264,7 @@ public:
                 }
 
                 auto target = args[2];
-                wifi->deleteRegisteredNetwork(target)->then([=](Error err){
+                wifi->deleteRegisteredNetwork(target)->then([=, &cli](Error err){
                     if (err == Errors::NoError)
                         cli.sendData("Saved network deleted: " + target);
                     else
@@ -274,7 +275,7 @@ public:
             }
             else if (savedSub == "deleteall")
             {
-                wifi->deleteAllRegisteredNetworks()->then([=](Error err){
+                wifi->deleteAllRegisteredNetworks()->then([=, &cli](Error err){
                     if (err == Errors::NoError)
                         cli.sendData("All saved networks were removed.");
                     else
@@ -294,7 +295,7 @@ public:
 
                 auto ssid = args[2];
                 auto password = args[3];
-                wifi->addOrUpdateRegisteredNetwork(ssid, password)->then([=](Error err){
+                wifi->addOrUpdateRegisteredNetwork(ssid, password)->then([=, &cli](Error err){
                     if (err == Errors::NoError)
                         cli.sendData("Saved network stored: " + ssid);
                     else
@@ -313,7 +314,7 @@ public:
                 }
 
                 auto target = args[2];
-                wifi->getRegisteredNetwork(target)->then([=](ResultWithStatus<SavedNetworkInfo> result){
+                wifi->getRegisteredNetwork(target)->then([=, &cli](ResultWithStatus<SavedNetworkInfo> result){
                     if (result.status != Errors::NoError)
                     {
                         cli.sendData("Saved network not found: " + target);
@@ -341,7 +342,7 @@ public:
                 auto target = args[2];
                 auto newSsid = args[3];
                 auto newPassword = args[4];
-                wifi->changeRegisteredNetwork(target, newSsid, newPassword)->then([=](Error err){
+                wifi->changeRegisteredNetwork(target, newSsid, newPassword)->then([=, &cli](Error err){
                     if (err == Errors::NoError)
                         cli.sendData("Saved network changed: " + target + " -> " + newSsid);
                     else
@@ -360,6 +361,60 @@ public:
         cli.sendData("Unknown wifi subcommand: " + sub);
         onReady();
     }
+
+    void logsCommands(TelnetServer::CliInfo &cli, function<void()> onReady, vector<String> args)
+    {
+
+        if (args.size() == 0 || args[0] == "")
+        {
+            cli.sendData("Missing logs subcommand. Use: logs listen | logs stop");
+            onReady();
+            return;
+        }
+
+        auto sub = args[0];
+
+        if (sub == "listen")
+        {
+            if (cli.tags.count("logs_observing_id") && cli.tags["logs_observing_id"] != "-1")
+            {
+                cli.sendData("Already listening to logs.");
+                onReady();
+                return;
+            }
+
+            auto observingId = this->logService.OnLog.listen([&](ILoggerObservingItem item){
+                auto msg = logService.MountLineHeader(item.level, item.name) + logService.identMsg(item.msg, 0);
+                msg += logService.identMsg(item.msg, msg.length());
+
+                cli.sendData(msg);
+            });
+            cli.tags["logs_observing_id"] = String(observingId);
+        }
+        else if (sub == "stop")
+        {
+            if (!cli.tags.count("logs_observing_id"))
+            {
+                cli.sendData("Not currently listening to logs.");
+                onReady();
+                return;
+            }
+
+            auto observingId = cli.tags["logs_observing_id"].toInt();
+            this->logService.OnLog.stopListening(observingId);
+            cli.tags.erase("logs_observing_id");
+        }
+        else
+        {
+            cli.sendData("Unknown logs subcommand: " + sub);
+            cli.sendData("Available: listen, stop");
+            onReady();
+            return;
+        }
+
+        onReady();
+    }
+        
 
     String drawWifiSignalBarChart(int rssid_dBm)
     {
