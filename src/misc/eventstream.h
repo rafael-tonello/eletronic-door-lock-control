@@ -32,10 +32,14 @@ public:
     }
     void emit(T item){ stream(item); }
 
-    void stopListen(int id)
+    void stopListening(int id)
     {
         if (list.count(id))
             list.erase(id);
+    }
+    void unsubscribe(int id)
+    {
+        stopListening(id);
     }
 
 
