@@ -92,7 +92,7 @@ void TelnetServer::picUpkNextClient()
         nLog.info("TCP client ("+client.remoteIP().toString()+":"+String(client.remotePort())+") connected.");
         auto id = cliIdCount++;
         
-        clients[id] = CliInfo();
+        clients[id] = CliInfoExtented();
         clients[id].remoteIP = client.remoteIP();
         clients[id].remotePort = client.remotePort();
         clients[id].theClient = client;
@@ -100,8 +100,8 @@ void TelnetServer::picUpkNextClient()
         clients[id].authenticationState = CliInfo::AuthState::AS_UNAUTHENTICATED;
         clients[id].id = id;
         clients[id].currentlyIsProcessingALine = false;
-        clients[id].sendData = [=](String data){
-            sendToClient(clients[id], data);
+        clients[id].___sendDataf = [=](String data, bool breakLine = true){
+            sendToClient(clients[id], data, breakLine);
         };
 
 
@@ -353,8 +353,6 @@ Promise<TpNothing>::smp_t TelnetServer::sendInitialInfoToClient(CliInfo &cli)
 
 void TelnetServer::finalizeClient(CliInfo &cli)
 {
-    cli.messagebus_cmd_observinIds.clear();
-
     cli.theClient.stop();
     String finalLogMessage = "Client ("+cli.remoteIP.toString()+":"+String(cli.remotePort)+") disconnected.";
     

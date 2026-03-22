@@ -22,6 +22,9 @@ class TelnetServer {
 public:
     class CliInfo {
     public:
+        //a generic key-value store that can be used for any purpose
+        std::map<String, String> tags; 
+
         enum AuthState {
             AS_UNAUTHENTICATED,
             AS_AUTHENTICATING,
@@ -35,16 +38,23 @@ public:
         int id;
         int passwordAttempts = 0;
 
-        int log_cmd_observing_id = -1;
-        vector<int> messagebus_cmd_observinIds;
-
         bool currentlyIsProcessingALine = false;
         int telnetCmdBytesToSkip = 0;
         bool ignoreNextLf = false;
 
-        function<void(String)> sendData = nullptr;
+        virtual void sendData(String data, bool breakLine = true) = 0;
 
         EventStream<tuple<String, function<void()>>> onDataReceived;
+    };
+
+    class CliInfoExtented: public CliInfo {
+    public:
+        function<void(String, bool)> ___sendDataf = nullptr;
+
+        void sendData(String data, bool breakLine = true) override{
+            if (___sendDataf != nullptr)
+                ___sendDataf(data, breakLine);
+        }
     };
 
 private:
@@ -66,7 +76,7 @@ private:
     NamedLog nLog;
 
     vector<int> cliIds;
-    std::map<int, CliInfo> clients;
+    std::map<int, CliInfoExtented> clients;
 
     atomic<bool> working;
 
