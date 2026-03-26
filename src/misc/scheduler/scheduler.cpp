@@ -222,6 +222,8 @@ void Scheduler::processATimedTask(const std::shared_ptr<TimedTask>& task, uint e
             task->isCurrentlyScheduled = true;
             
             this->run([task](){
+                if (!task->name.isEmpty())
+                    Serial.println("Running timed task: " + task->name);
 
                 task->f();
 
@@ -278,7 +280,7 @@ std::shared_ptr<TimedTask> Scheduler::periodicTask(
 
     this->timedTasks.push_back(tsk);
 
-    tsk->state = initialState;
+    tsk->tags = initialState;
     return tsk;
 }
 
