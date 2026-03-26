@@ -62,6 +62,7 @@ public:
         String ip;
         String gatewayIp;
         String broadcastIp;
+        String macAddress;
         NetworkInfo networkInfo;
     };
 
@@ -83,6 +84,7 @@ private:
     //evtbus MessageBusTp *messageBus;
     NamedLog nLog;
     IStorage &storage;
+    String hostName;
 
     /**
      * @brief Create a new Ssid to be used as the AP name. The password will be allwais '12345678'
@@ -98,7 +100,7 @@ private:
     Promise<NetworkInfo>::smp_t getLastUsedNetwork();
     
     
-    Promise<Error>::smp_t connectToNetwork(NetworkInfo network);
+    Promise<Error>::smp_t connectToNetwork(NetworkInfo network, bool registerNetworkIfSucess = true);
     Promise<ResultWithStatus<String>>::smp_t getNetworkdPassword(NetworkInfo network);
     
     Promise<TpNothing>::smp_t registerKnownNetwork(String ssid, String password);
@@ -106,7 +108,16 @@ private:
     void stopMonitorCurrentConnection();
     void startMonitoringCurrentConnection();
 public:
-    WFService(Scheduler &scheduler/*, MessageBusTp *messageBus*/, ILogger& logService, IStorage &storage): scheduler(scheduler), storage(storage){
+    WFService(
+        Scheduler &scheduler,
+        ILogger& logService,
+        IStorage &storage,
+        String hostName
+    ): 
+        scheduler(scheduler), 
+        storage(storage),
+        hostName(hostName)
+    {
         this->nLog = logService.getNLog("WFService");
     }
 
@@ -141,7 +152,7 @@ public:
     Promise<ResultWithStatus<int>>::smp_t getRegisteredNetworkIndex(String indexOrSsid);
     Promise<ResultWithStatus<SavedNetworkInfo>>::smp_t getRegisteredNetwork(String indexOrSsid);
     Promise<TpNothing>::smp_t startAccessPoint();
-    /*not pure*/Promise<Error>::smp_t connectToNetwork(String ssid, String password);
+    Promise<Error>::smp_t connectToNetwork(String ssid, String password, bool registerNetworkIfSucess = true);
 
     
 };

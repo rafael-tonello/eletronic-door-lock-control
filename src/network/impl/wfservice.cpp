@@ -17,6 +17,9 @@ Promise<Error>::type WFService::autoConnectOrCreateAp(){
 void WFService::connectProcess(){
     stopMonitorCurrentConnection();
 
+    //setHostname
+    WiFi.setHostname(this->hostName.c_str());
+
     Serial.println("--------------====================");
 
     this->conStateChangeEvent.stream(IConServiceCommonStates::CONNECTING);
@@ -107,7 +110,7 @@ Promise<NetworkInfo>::smp_t WFService::getLastUsedNetwork(){
 }
 
 /*not pure*/
-Promise<Error>::smp_t WFService::connectToNetwork(String ssid, String password)
+Promise<Error>::smp_t WFService::connectToNetwork(String ssid, String password, bool registerNetworkIfSucess)
 {
     auto ret = Promise<Error>::get_smp();
 
@@ -133,8 +136,21 @@ Promise<Error>::smp_t WFService::connectToNetwork(String ssid, String password)
                         this->conStateChangeEvent.stream(IConServiceCommonStates::CONNECTED);
 
                         this->scheduler.run([=](){
-                            //evtbus this->messageBus->post("wifi.connected", this->connectedSsid);
-                            ret->post(Errors::NoError);
+                            if (registerNetworkIfSucess)
+                            {
+                                nLog.info("Registering network '"+ssid+"' as a known network");
+                                this->registerKnownNetwork(ssid, password)->then([=](TpNothing noneResult){
+                                    
+                                    nLog.info("Network '"+ssid+"' registered with sucess");
+                                    ret->post(Errors::NoError);
+
+                                    return None;
+                                });
+                            } else {
+                                //evtbus this->messageBus->post("wifi.connected", this->connectedSsid);
+                                ret->post(Errors::NoError);
+                            }
+
                         }, "wifi::connectToNetwork::postConnectedEvent", DEFAULT_PRIORITIES::LOW_);
 
                         tsk->abort();
@@ -184,9 +200,9 @@ Promise<Error>::smp_t WFService::connectToNetwork(String ssid, String password)
     return ret;
 }
 
-Promise<Error>::smp_t WFService::connectToNetwork(NetworkInfo network)
+Promise<Error>::smp_t WFService::connectToNetwork(NetworkInfo network, bool registerNetworkIfSucess)
 {
-    nLog.info("Getting network '"+network.ssid+"' information form stored data");
+    nLog.info("Getting network '"+network.ssid+"' information from storage");
     auto ret = Promise<Error>::get_smp();
     this->getNetworkdPassword(network)->then([=](ResultWithStatus<String> result){
         if (result.status != Errors::NoError)
@@ -195,7 +211,7 @@ Promise<Error>::smp_t WFService::connectToNetwork(NetworkInfo network)
             return;
         }
 
-        this->connectToNetwork(network.ssid, result.result)->then([=](Error connectResult){
+        this->connectToNetwork(network.ssid, result.result, registerNetworkIfSucess)->then([=](Error connectResult){
             ret->post(connectResult);
         });
     });
@@ -283,7 +299,7 @@ void WFService::startMonitoringCurrentConnection()
             connectProcess();
             tsk->abort();
         }
-    }, "wifi::startMonitoringCurrentConnection::monitoringTask");
+    });
 }
 
 WFService::WifiConInfo WFService::getWifiCliAddrInfo()
@@ -292,7 +308,9 @@ WFService::WifiConInfo WFService::getWifiCliAddrInfo()
     ret.ip = String(WiFi.localIP().toString().c_str());
     ret.gatewayIp = String(WiFi.gatewayIP().toString().c_str());
     ret.broadcastIp = "";
-
+    
+    ret.macAddress = WiFi.macAddress();
+    
     ret.networkInfo = NetworkInfo{
         .ssid = WiFi.SSID(),
         .rssid_dBm = WiFi.RSSI()
@@ -311,6 +329,8 @@ WFService::WifiConInfo WFService::getWifiApAddrInfo()
     ret.ip = String(WiFi.softAPIP().toString().c_str());
     ret.gatewayIp = String(WiFi.softAPIP().toString().c_str());
     ret.broadcastIp = "";
+
+    ret.macAddress = WiFi.softAPmacAddress();
 
     ret.networkInfo = NetworkInfo{
         .ssid = WiFi.softAPSSID(),
@@ -761,7 +781,7 @@ Promise<Error>::smp_t WFService::changeRegisteredNetwork(String indexOrSsid, Str
 Promise<String>::smp_t WFService::getServiceInfo(){
     auto ret = Promise<String>::get_smp();
     String message="Wifi Service Info:\n";
-    message+= "  Current state: "+stateToString(conStateChangeEvent.getLastStreamedData())+"\n";
+    message+= "  Current state: "+stateToString(conStateChangeEvent.getLastData())+"\n";
     message+= "  Radio state: "+wlStateToString(WiFi.status())+"\n";
     message+= "  Connected ssid: "+connectedSsid+"\n";
 
