@@ -56,7 +56,7 @@ public:
 
     void resume(){ this->__paused = false; }
 
-    std::map<String, String> state;
+    std::map<String, String> tags;
 
 
     TimedTask(
