@@ -7,6 +7,7 @@
 using namespace std;
 
 #define IIOHAL_MAX_ANALOGIC 1023
+#define IIOHAL_MAX_PWM 100
 #define IIOHAL_IO_ID_TYPE int
 #define IOHAL_INVALID_IO -1
 
@@ -20,6 +21,11 @@ using namespace std;
 //#define IOHAL_A0 0x0
 //#define IOHAL_A1 0x0
 //#define IOHAL_A... 0x0
+
+//SHOULD BE override/created by implementations (just a model)
+//#define IOHAL_PWM0 0x0
+//#define IOHAL_PWM1 0x0
+//#define IOHAL_PWM... 0x0
     
     
 
@@ -99,10 +105,12 @@ struct IHAL_PIN_INFO{
 class IIOHal {
 protected:
     virtual tuple<bool, Error> InternalDigitalRead(IIOHAL_IO_ID_TYPE ioNumber) = 0;
-    virtual tuple<int, Error> InternalAnalogRead(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    virtual tuple<int, Error> InternalAnalogRead(IIOHAL_IO_ID_TYPE ioNumber, int maxValue) = 0;
+    virtual tuple<int, Error> InternalPwmRead(IIOHAL_IO_ID_TYPE ioNumber, int maxValue) = 0;
 
     virtual Error InternalDigitalWrite(IIOHAL_IO_ID_TYPE ioNumber, bool value) = 0;
-    virtual Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value) = 0;
+    virtual Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value, int maxValue) = 0;
+    virtual Error InternalPwmWrite(IIOHAL_IO_ID_TYPE ioNumber, int value, int maxValue) = 0;
 
 public: 
     //returns the current real state and the configured desired state of an IO
@@ -113,6 +121,7 @@ public:
     virtual Error SetPhysicalPinMode(IIOHAL_IO_ID_TYPE ioNumber, PHYSICAL_PIN_MODE mode) = 0;
     
     virtual tuple<bool, Error> IsAnalogic(IIOHAL_IO_ID_TYPE ioNumber) = 0;
+    virtual tuple<bool, Error> IsPwm(IIOHAL_IO_ID_TYPE ioNumber) = 0;
 
 
 
@@ -122,6 +131,9 @@ public:
     //return a digital pin id (or IOHAL_INVALID_IO if unavailable)
     virtual IIOHAL_IO_ID_TYPE GetIdDi(size_t index) = 0;
 
+    //return a pwm pin id (or IOHAL_INVALID_IO if unavailable)
+    virtual IIOHAL_IO_ID_TYPE GetIdPwm(size_t index) = 0;
+
     //IWifi wifi()
     //IBlurtooth bluetooth()
 public:
@@ -130,6 +142,7 @@ public:
         struct READ_WRITE_OPTIONS{
             bool autoChangeIOMOde;
             int maxValueForAnalogic;
+            int maxValueForPwm;
             int value;
         };
 
@@ -145,6 +158,13 @@ public:
                 options->maxValueForAnalogic = maxValue;
             };
         }
+
+        //is used in convertions between pwm and analogic values
+        auto WithMaxPwmValue(int maxValue){
+            return [=](READ_WRITE_OPTIONS *options){
+                options->maxValueForPwm = maxValue;
+            };
+        }
     // #endregion }
 
     
@@ -152,6 +172,7 @@ public:
     // #region read mechanism {
         class ReadResult{
         public:
+            //internally, the value is holden as an analogic value
             int value;
             Error err;
             int _maxValueForAnalogic = IIOHAL_MAX_ANALOGIC;
@@ -168,6 +189,11 @@ public:
                 return value;
             }
 
+            int Pwm()
+            {
+                return (int)(((long)value * (long)IIOHAL_MAX_PWM) / (long)_maxValueForAnalogic);
+            }
+
             //operators for easy use of ReadResult
             operator bool(){
                 return Digital();
@@ -179,7 +205,7 @@ public:
         };
 
         ReadResult Read(IIOHAL_IO_ID_TYPE ioNumber, vector<function<void(READ_WRITE_OPTIONS*)>> options = {}){
-            READ_WRITE_OPTIONS defaultOptions = {true, IIOHAL_MAX_ANALOGIC, 0};
+            READ_WRITE_OPTIONS defaultOptions = {true, IIOHAL_MAX_ANALOGIC, IIOHAL_MAX_PWM, 0};
 
             for (auto opt : options){
                 opt(&defaultOptions);
@@ -212,13 +238,34 @@ public:
                 return ReadResult(0, err2, defaultOptions.maxValueForAnalogic);
             }
 
+            auto [isPwm, err3] = IsPwm(ioNumber);
+            if (err3 != Errors::NoError){
+                return ReadResult(0, err3, defaultOptions.maxValueForAnalogic);
+            }
+
+            if (isAnalogic && isPwm){
+                return ReadResult(0, Errors::createError("IO cannot be analogic and pwm at same time"), defaultOptions.maxValueForAnalogic);
+            }
+
             if (isAnalogic){
-                auto [analogValueTmp, err] = InternalAnalogRead(ioNumber);
+                auto [analogValueTmp, err] = InternalAnalogRead(ioNumber, defaultOptions.maxValueForAnalogic);
                 if (err != Errors::NoError){
                     return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
                 }
 
                 analogValue = analogValueTmp;
+            }
+            else if (isPwm){
+                auto [pwmValue, err] = InternalPwmRead(ioNumber, defaultOptions.maxValueForPwm);
+                if (err != Errors::NoError){
+                    return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
+                }
+
+                if (defaultOptions.maxValueForPwm <= 0){
+                    return ReadResult(0, Errors::createError("maxValueForPwm must be greater than zero"), defaultOptions.maxValueForAnalogic);
+                }
+
+                analogValue = (int)(((long)pwmValue * (long)defaultOptions.maxValueForAnalogic) / (long)defaultOptions.maxValueForPwm);
             }
             else{
                 auto [digitalValue, err2] = InternalDigitalRead(ioNumber);
@@ -235,67 +282,78 @@ public:
 
     /* #region write mechanism { */
         class WriteValue{
+        private:
         public:
-            int value;
+            int __analogicValue; //ever an analogic value
 
-            WriteValue(bool value){
-                if (value){
-                    this->value = IIOHAL_MAX_ANALOGIC;
-                }
-                else{
-                    this->value = 0;
-                }
+            WriteValue(int analogicValue): __analogicValue(analogicValue){}
+            
+            static WriteValue FromDigital(bool value){
+                return WriteValue(value ? IIOHAL_MAX_ANALOGIC : 0);
             }
 
-            WriteValue(int value){
-                this->value = value;
+            static WriteValue FromAnalogic(int value, int maxValueForScalling = IIOHAL_MAX_ANALOGIC){
+                value = IIOHAL_MAX_ANALOGIC / maxValueForScalling * value;
+                return WriteValue(value);
+            }
+
+            static WriteValue FromPwm(int value, int maxPwmForScalling = IIOHAL_MAX_PWM){
+                auto analogic =  (int)(((long)IIOHAL_MAX_ANALOGIC) / (long)maxPwmForScalling * (long)value);
+
+                return WriteValue(analogic);
+            }
+
+            bool Digital()
+            {
+                return __analogicValue >= IIOHAL_MAX_ANALOGIC / 2;
+            }
+
+            int Analogic(int maxValueForScalling = IIOHAL_MAX_ANALOGIC)
+            {
+                return (int)(((long)maxValueForScalling) / (long)IIOHAL_MAX_ANALOGIC * (long)__analogicValue);
+            }
+
+            int Pwm(int maxPwmForScalling = IIOHAL_MAX_PWM)
+            {
+                return (int)(((long)maxPwmForScalling) / (long)IIOHAL_MAX_ANALOGIC * (long)__analogicValue);
             }
         
         }; 
-        #define WV WriteValue
-        virtual Error Write(IIOHAL_IO_ID_TYPE ioNumber, WV value, vector<function<void(READ_WRITE_OPTIONS*)>> options = {})
+
+        virtual Error Write(IIOHAL_IO_ID_TYPE ioNumber, WriteValue value)
         {
-            READ_WRITE_OPTIONS defaultOptions = {true, IIOHAL_MAX_ANALOGIC, 0};
-
-            for (auto opt : options){
-                opt(&defaultOptions);
-            }
-
-            //check if io is setted to be an input and autoChangeIOMode is true, if so change it to output
-            if (defaultOptions.autoChangeIOMOde){
-                //read current mode of io
-                auto [ioInfo, err] = GetIOInfo(ioNumber);
-                if (err != Errors::NoError){
-                    return err;
-                }
-
-                if (ioInfo.desiredType == DPT_INPUT){
-                    return Errors::createError("IO is configured as input, cannot write");
-                }
-
-                if (ioInfo.currentPhysicalPinMode != PPM_OUTPUT){
-                    SetPhysicalPinMode(ioNumber, PPM_OUTPUT);
-                }
-            }
-
-            //write value to io
             Error err = Errors::NoError;
-
             //if io is an analogic output, write it as an analogic output
             auto [isAnalogic, err2] = IsAnalogic(ioNumber);
             if (err2 != Errors::NoError){
                 return err2;
             }
 
-            if (isAnalogic){
+            auto [isPwm, err3] = IsPwm(ioNumber);
+            if (err3 != Errors::NoError){
+                return err3;
+            }
 
-                err = InternalAnalogWrite(ioNumber, value.value);
+            if (isAnalogic && isPwm){
+                return Errors::createError("IO cannot be analogic and pwm at same time");
+            }
+
+            if (isAnalogic){
+                err = InternalAnalogWrite(ioNumber, value.__analogicValue, IIOHAL_MAX_ANALOGIC);
+                if (err != Errors::NoError){
+                    return err;
+                }
+            }
+            else if (isPwm){
+                int pwmValue = (long)IIOHAL_MAX_ANALOGIC / (long)IIOHAL_MAX_PWM * value.__analogicValue;
+
+                err = InternalPwmWrite(ioNumber, pwmValue, IIOHAL_MAX_PWM);
                 if (err != Errors::NoError){
                     return err;
                 }
             }
             else{
-                bool digitalValue = value.value >= defaultOptions.maxValueForAnalogic / 2;
+                bool digitalValue = value.__analogicValue >= IIOHAL_MAX_ANALOGIC / 2;
                 err = InternalDigitalWrite(ioNumber, digitalValue);
                 if (err != Errors::NoError){
                     return err;
@@ -310,5 +368,7 @@ public:
     //io->write(DAN01, 512);
 
 };
+
+#define WV IIOHal::WriteValue
 
 #endif
