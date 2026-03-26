@@ -22,7 +22,7 @@ class TelnetServer {
 public:
     class CliInfo {
     public:
-        //a generic key-value store that can be used for any purpose
+        //a generic key-value that can holds custom states
         std::map<String, String> tags; 
 
         enum AuthState {
@@ -76,7 +76,7 @@ private:
     NamedLog nLog;
 
     vector<int> cliIds;
-    std::map<int, CliInfoExtented> clients;
+    std::map<int, std::shared_ptr<CliInfoExtented>> clients;
 
     atomic<bool> working;
 
@@ -84,17 +84,16 @@ private:
     void work();
     void picUpkNextClient();
     Promise<TpNothing>::smp_t talkToClients();
-    Promise<TpNothing>::smp_t TalkToAClient(CliInfo &cli);
-    void processLineReceivedFromClient(CliInfo &cli, String receivedLine);
-    void sendToClient(CliInfo &cli, String message, bool breakLine = true);
-    Promise<TpNothing>::smp_t sendInitialInfoToClient(CliInfo &cli);
-    void finalizeClient(CliInfo &cli);
-    Promise<Error>::smp_t log_cmds(CliInfo &cli, String cmd);
-    Promise<Error>::smp_t messagebus_cmds(CliInfo &cli, String cmd);
-    Promise<Error>::smp_t display_help(CliInfo& cli);
+    Promise<TpNothing>::smp_t TalkToAClient(std::shared_ptr<CliInfoExtented>cli);
+    void processLineReceivedFromClient(std::shared_ptr<CliInfoExtented>cli, String receivedLine);
+    void sendToClient(std::shared_ptr<CliInfoExtented>cli, String message, bool breakLine = true);
+    Promise<TpNothing>::smp_t sendInitialInfoToClient(std::shared_ptr<CliInfoExtented>cli);
+    void finalizeClient(std::shared_ptr<CliInfoExtented>cli);
+    Promise<Error>::smp_t log_cmds(std::shared_ptr<CliInfoExtented>cli, String cmd);
+    Promise<Error>::smp_t display_help(std::shared_ptr<CliInfoExtented> cli);
     
     Promise<bool>::smp_t validadtePassword(String password);
-    void setClientEcho(CliInfo &cli, bool enabled);
+    void setClientEcho(std::shared_ptr<CliInfoExtented>cli, bool enabled);
 
     void stopOldServer();
 
@@ -113,9 +112,12 @@ public:
     ~TelnetServer(); 
 
     //called after client be called and authenticated
-    EventStream<CliInfo&> onClientConnected;
-    EventStream<CliInfo&> onClientDisconnected;
-    EventStream<tuple<CliInfo&, String, function<void()>>> onClientDataReceived;
+    EventStream<std::shared_ptr<CliInfoExtented>> onClientConnected;
+    EventStream<std::shared_ptr<CliInfoExtented>> onClientDisconnected;
+    EventStream<tuple<std::shared_ptr<CliInfoExtented>, String, function<void()>>> onClientDataReceived;
+
+    // Safe helper for async command callbacks that only keep a client id.
+    bool sendDataToClientById(int cliId, String data, bool breakLine = true);
 
     void SendData(Client& client, String data);
     void BroadcastData(String data);
