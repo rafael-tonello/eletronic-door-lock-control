@@ -12,6 +12,8 @@ enum LogLevel {DEBUG, INFO, WARNING, ERROR, CRITICAL};
 
 class NamedLog;
 
+#define LOGGER_ENABLE_LINUX_COLORS true
+
 struct ILoggerObservingItem{
     String name;
     LogLevel level;
@@ -43,7 +45,7 @@ public:
     virtual void log(String name, String msg, bool breakLine = true);
     
     //a helper that generate a line header in the format [date time] [log level] [name]
-    virtual String MountLineHeader(LogLevel level, String name);
+    virtual String MountLineHeader(LogLevel level, String name, bool alloLinuxColors);
     
     //a helper that ident the message with the specified number of spaces (usefull to align multiline messages)
     String identMsg(String msg, int identationSize);
@@ -116,8 +118,10 @@ public:
 class DefaultLogger: public ILogger{
 private:
     String lastHeader = "";
+    bool allowLinuxColors = true;
 
 public:
+    DefaultLogger(bool allowLinuxColors = true): allowLinuxColors(allowLinuxColors) {}
     void logIt(LogLevel level, String name, String msg, bool breakLine = true) override;
 
 };

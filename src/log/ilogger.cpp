@@ -72,9 +72,36 @@ String ILogger::identMsg(String msg, int identationSize)
     return msg;
 }
 
-String ILogger::MountLineHeader(LogLevel level, String name)
+String ILogger::MountLineHeader(LogLevel level, String name, bool alloLinuxColors)
 {
     String header = "";
+    if (LOGGER_ENABLE_LINUX_COLORS)
+    {
+        //close previous color (if any)
+        header += "\033[0m";
+
+        switch (level){
+            case LogLevel::DEBUG:
+                //grayed out
+                header += "\033[90m"; // Bright Black (Gray)
+            break;
+            break;
+            case LogLevel::WARNING:
+                header += "\033[33m"; // Yellow
+            break;
+            case LogLevel::ERROR:
+                header += "\033[31m"; // Red
+            break;
+            case LogLevel::CRITICAL:
+                //white with red background
+                header += "\033[41m\033[97m"; // Red background + Bright White text
+                //header += "\033[1m\033[31m"; // Bold Red
+            default:
+                //default terminal color
+            break;
+        };
+    }
+
     String dateTime = getDateTimeInfo();
     if (dateTime != "")
         header = "["+dateTime+"] "+ header;
@@ -97,7 +124,7 @@ void DefaultLogger::logIt(LogLevel level, String name, String msg, bool breakLin
     int headerSize = 0;
     if (isANewLine == true)
     {
-        header = MountLineHeader(level, name);
+        header = MountLineHeader(level, name, allowLinuxColors);
         lastHeader = header;
     }
 
