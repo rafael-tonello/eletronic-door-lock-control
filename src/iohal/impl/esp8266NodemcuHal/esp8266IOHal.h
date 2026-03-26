@@ -52,12 +52,15 @@ protected:
 
     IIOHAL_IO_ID_TYPE GetIdAn(size_t index) override;
     IIOHAL_IO_ID_TYPE GetIdDi(size_t index) override;
+    IIOHAL_IO_ID_TYPE GetIdPwm(size_t index) override;
 
     tuple<bool, Error> InternalDigitalRead(IIOHAL_IO_ID_TYPE ioNumber) override;
-    tuple<int, Error> InternalAnalogRead(IIOHAL_IO_ID_TYPE ioNumber) override;
+    tuple<int, Error> InternalAnalogRead(IIOHAL_IO_ID_TYPE ioNumber, int maxValue) override;
+    tuple<int, Error> InternalPwmRead(IIOHAL_IO_ID_TYPE ioNumber, int maxValue) override;
 
     Error InternalDigitalWrite(IIOHAL_IO_ID_TYPE ioNumber, bool value) override;
-    Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value) override;
+    Error InternalAnalogWrite(IIOHAL_IO_ID_TYPE ioNumber, int value, int maxValue) override;
+    Error InternalPwmWrite(IIOHAL_IO_ID_TYPE ioNumber, int value, int maxValue) override;
 
     //returns the current real state and the configured desired state of an IO
     tuple<IHAL_PIN_INFO, Error> GetIOInfo(IIOHAL_IO_ID_TYPE ioNumber) override;
@@ -67,6 +70,7 @@ protected:
     Error SetPhysicalPinMode(IIOHAL_IO_ID_TYPE ioNumber, PHYSICAL_PIN_MODE mode) override;
 
     tuple<bool, Error> IsAnalogic(IIOHAL_IO_ID_TYPE ioNumber) override;
+    tuple<bool, Error> IsPwm(IIOHAL_IO_ID_TYPE ioNumber) override;
 };
 
 
