@@ -27,8 +27,16 @@ public:
 
     void stream(T item)
     {
-        for(auto &c: list)
-            c.second(item);
+        vector<int> ids;
+        ids.reserve(list.size());
+        for (auto &c: list)
+            ids.push_back(c.first);
+
+        for (auto id: ids)
+        {
+            if (list.count(id))
+                list[id](item);
+        }
     }
     void emit(T item){ stream(item); }
 
@@ -51,31 +59,47 @@ private:
     int idCount = 0;
     std::map<int, function<void(T)>> list;
 
-    T lastData;
 public:
 
+    T lastData;
+    
     EventStream_Stateful(){}
     EventStream_Stateful(T initialState)
     {
         lastData = initialState;
     }
 
-    void listen(function<void(T)> observer, bool callWithLastStreamedData = true)
+    int listen(function<void(T)> observer, bool callWithLastStreamedData = true)
     {
         int id = idCount++;
         list[id] =observer;
-        observer(lastData);
+        if (callWithLastStreamedData)
+            observer(lastData);
+        return id;
     }
 
     void stream(T item)
     {
         lastData = item;
-        for(auto &c: list)
-            c.second(item);
+        vector<int> ids;
+        ids.reserve(list.size());
+        for (auto &c: list)
+            ids.push_back(c.first);
+
+        for (auto id: ids)
+        {
+            if (list.count(id))
+                list[id](item);
+        }
     }
     void emit(T item){ stream(item); }
 
-    T getLastStreamedData()
+    T getLastData()
+    {
+        return lastData;
+    }
+    
+    T getCurrentState()
     {
         return lastData;
     }
