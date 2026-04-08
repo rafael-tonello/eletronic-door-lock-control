@@ -139,6 +139,14 @@ public:
     
     WifiConInfo getWifiCliAddrInfo();
     WifiConInfo getWifiApAddrInfo();
+
+    enum WifiMode{
+        CLI, AP
+    };
+    WifiMode getCurrentWifiMode();
+
+
+
     String stateToString(IConServiceState state);
 
     //function for 'manual' wifi management
@@ -152,7 +160,7 @@ public:
     Promise<ResultWithStatus<int>>::smp_t getRegisteredNetworkIndex(String indexOrSsid);
     Promise<ResultWithStatus<SavedNetworkInfo>>::smp_t getRegisteredNetwork(String indexOrSsid);
     Promise<TpNothing>::smp_t startAccessPoint();
-    Promise<Error>::smp_t connectToNetwork(String ssid, String password, bool registerNetworkIfSucess = true);
+    /*not pure*/Promise<Error>::smp_t connectToNetwork(String ssid, String password, bool registerNetworkIfSucess = true);
 
     
 };
