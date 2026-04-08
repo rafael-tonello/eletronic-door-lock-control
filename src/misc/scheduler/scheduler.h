@@ -16,7 +16,7 @@
 using namespace std;
 using PrioDescriptionType = char;
 
-#define MilliSeconds *1
+#define MiliSeconds *1
 #define Seconds *1000
 
 class Task{
@@ -53,7 +53,6 @@ public:
     void abort(){ this->__abort = true; }
 
     void pause(){ this->__paused = true; }
-
     void resume(){ this->__paused = false; }
 
     std::map<String, String> tags;
