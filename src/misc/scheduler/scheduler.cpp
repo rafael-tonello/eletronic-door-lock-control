@@ -214,9 +214,10 @@ void Scheduler::processTimedTasks(uint elapsedTime)
 void Scheduler::processATimedTask(const std::shared_ptr<TimedTask>& task, uint elapsedTime)
 {
     task->_timeCount += elapsedTime;
+    task->taskAge += elapsedTime;
+
     if (task->_timeCount >= task->period )
     {
-        task->taskAge += elapsedTime;
         if (!task->isCurrentlyScheduled)
         {
             task->isCurrentlyScheduled = true;
