@@ -123,7 +123,7 @@ Promise<Error>::smp_t WFService::connectToNetwork(String ssid, String password, 
 
     if (ssid != "")
     {
-        scheduler.periodicTask(500 MilliSeconds, [=](shr_tmdtsk tsk){
+        scheduler.periodicTask(500 MiliSeconds, [=](shr_tmdtsk tsk){
             if (tsk->taskAge <= 15000)
             {
                 auto wfStatus = WiFi.status();
@@ -291,7 +291,7 @@ void WFService::stopMonitorCurrentConnection()
 
 void WFService::startMonitoringCurrentConnection()
 {
-    this->monitoringConnectionTask = scheduler.periodicTask(1000 MilliSeconds, [=](shr_tmdtsk tsk){
+    this->monitoringConnectionTask = scheduler.periodicTask(1000 MiliSeconds, [=](shr_tmdtsk tsk){
         if (WiFi.status() != WL_CONNECTED)
         {
             this->conStateChangeEvent.stream(IConServiceCommonStates::DISCONNECTED);
