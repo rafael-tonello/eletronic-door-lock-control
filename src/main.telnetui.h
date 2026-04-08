@@ -36,12 +36,15 @@ private:
     VSTP::VstpClient *vssCli;
     TelnetServer &telnetInterface;
 
+    String helpTitleLine;
+
     NamedLog nLog;
 
     std::map<String, function<void(std::shared_ptr<TelnetServer::CliInfo>, function<void()>, vector<String>)>> commandsMap;
 
 public:
     MainTelnetUI(
+        String helpTitleLine,
         IIOHal &hal,
         ILogger &logService,
         IStorage &storage,
@@ -50,13 +53,14 @@ public:
         VSTP::VstpClient *vssCli,
         TelnetServer &telnetInterface
     ): 
-        hal(hal), 
+    hal(hal), 
         logService(logService), 
         storage(storage), 
         conService(conService), 
         keyboard(keyboard), 
         vssCli(vssCli),
-        telnetInterface(telnetInterface)
+        telnetInterface(telnetInterface),
+        helpTitleLine(helpTitleLine)
     {
         nLog = logService.getNLog("MainTelnetUI");
 
@@ -133,6 +137,7 @@ public:
     
     void displayHelp(std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady)
     {
+        cli->sendData(helpTitleLine);
         cli->sendData("Available commands:");
         cli->sendData("  help                   - Show this help message");
         cli->sendData("  wifi <subcommand>      - run wifi related commands. ");
@@ -526,8 +531,9 @@ public:
             }
 
             auto observingId = this->logService.OnLog.listen([=](ILoggerObservingItem item){
-                auto msg = logService.MountLineHeader(item.level, item.name, true) + logService.identMsg(item.msg, 0);
+                auto msg = logService.MountLineHeader(item.level, item.name, true);
                 msg += logService.identMsg(item.msg, msg.length());
+                msg += FF::Reset;
 
                 cli->sendData(msg);
             });
