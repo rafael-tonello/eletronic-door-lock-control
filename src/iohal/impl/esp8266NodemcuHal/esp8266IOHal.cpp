@@ -59,7 +59,7 @@ Error ESP8266IOHal::InternalPwmWrite(IIOHAL_IO_ID_TYPE ioNumber, int value, int 
 tuple<IHAL_PIN_INFO, Error> ESP8266IOHal::GetIOInfo(IIOHAL_IO_ID_TYPE ioNumber)
 {
     if (availableIos.find(ioNumber) == availableIos.end()){
-        return {IHAL_PIN_INFO{ioNumber, DPT_INPUT, PPM_INPUT}, Errors::DerivateError(ERROR_InvalidIO, "IO number not found")};
+        return {IHAL_PIN_INFO{ioNumber, DPM_INPUT, PPM_UNKNOWN}, Errors::DerivateError(ERROR_InvalidIO, "IO number not found")};
     }
 
     return {availableIos[ioNumber], Errors::NoError};

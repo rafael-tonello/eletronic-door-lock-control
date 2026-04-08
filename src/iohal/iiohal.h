@@ -3,6 +3,7 @@
 
 #include <Arduino.h>
 #include <errors/errors.h>
+#include <ilogger.h>
 
 using namespace std;
 
@@ -33,9 +34,9 @@ extern Error ERROR_InvalidIO;
 
 //the configuration of the pins
 enum DESIRED_PIN_MODE {
-    DPT_INPUT, //pin can be only readed
-    DPT_OUTPUT, //pin can be only writed
-    DPT_DUPLEX, //Pin can be changed between input and output using SetRawPinMode
+    DPM_INPUT, //pin can be only readed
+    DPM_OUTPUT, //pin can be only writed
+    DPM_DUPLEX, //Pin can be changed between input and output using SetRawPinMode
 };
 
 //the current real pin mode
@@ -219,7 +220,7 @@ public:
                     return ReadResult(0, err, defaultOptions.maxValueForAnalogic);
                 }
 
-                if (ioInfo.desiredType == DPT_OUTPUT){
+                if (ioInfo.desiredType == DPM_OUTPUT){
                     return ReadResult(0, Errors::createError("IO is configured as output, cannot read"), defaultOptions.maxValueForAnalogic);
                 }
 
@@ -310,12 +311,12 @@ public:
 
             int Analogic(int maxValueForScalling = IIOHAL_MAX_ANALOGIC)
             {
-                return (int)(((long)maxValueForScalling) / (long)IIOHAL_MAX_ANALOGIC * (long)__analogicValue);
+                return (int)(((long)__analogicValue * (long)maxValueForScalling) / (long)IIOHAL_MAX_ANALOGIC);
             }
 
             int Pwm(int maxPwmForScalling = IIOHAL_MAX_PWM)
             {
-                return (int)(((long)maxPwmForScalling) / (long)IIOHAL_MAX_ANALOGIC * (long)__analogicValue);
+                return (int)(((long)__analogicValue * (long)maxPwmForScalling) / (long)IIOHAL_MAX_ANALOGIC);
             }
         
         }; 
@@ -345,7 +346,7 @@ public:
                 }
             }
             else if (isPwm){
-                int pwmValue = (long)IIOHAL_MAX_ANALOGIC / (long)IIOHAL_MAX_PWM * value.__analogicValue;
+                int pwmValue = ((long)value.__analogicValue * (long)IIOHAL_MAX_PWM) / (long)IIOHAL_MAX_ANALOGIC;
 
                 err = InternalPwmWrite(ioNumber, pwmValue, IIOHAL_MAX_PWM);
                 if (err != Errors::NoError){
