@@ -1,51 +1,22 @@
-#include <Arduino.h>
-#include <ArduinoOTA.h>
-
-#include <vector>
-
-#include <errors/errors.h>
-#include <scheduler.h>
-
-#include <iiohal.h>
-#include <iohal/impl/Esp8266_74hc595_hc4067/Esp8266_74hc595_hc4067.h>
-
-#include <ikeyboard.h>
-#include <keyboard/impl/GenericIIOHalKeyboard.h>
-
-#include <ilogger.h>
-
-#include <istorage.h>
-#include <storage/impl/preferenceslibrary/preferenceslibrarystorage.h>
-
-#include <inetwork.h>
-#include <network/impl/wfservice.h>
-
-#include <telnet/telnetserver.h>
-
-#include <vssClient/vstpclient.h>
-
+#include "main.h"
 #include "main.telnetui.h"
 
-#include "main.lockcontrol.h"
-
 using namespace std;
+using namespace AppMain;
 
-
-
-namespace {
-    String VERSION = "v0.0.1";
+namespace AppMain {
+    const String VERSION = "v0.0.1";
     const String DEFAULT_PREFIX = "n1.sys.doorlock.";
     const String WIFI_HOSTNAME = "ESP8266-GENIO";
 
-    const auto ENDLINE_LOCK_INPUT_PIN = IOHAL_A14;
-    const auto ENDLINE_UNLOCK_INPUT_PIN = IOHAL_A15;
-    const auto MOTOR_ENABLE_OUTPUT_PIN = IOHAL_D0;
-    const auto MOTOR_UNLOCK_OUTPUT_PIN = IOHAL_D1;
-    const auto MOTOR_LOCK_OUTPUT_PIN = IOHAL_D2;
+    const IIOHAL_IO_ID_TYPE ENDLINE_LOCK_INPUT_PIN = IOHAL_A14;
+    const IIOHAL_IO_ID_TYPE ENDLINE_UNLOCK_INPUT_PIN = IOHAL_A15;
+    const IIOHAL_IO_ID_TYPE MOTOR_ENABLE_OUTPUT_PIN = IOHAL_D0;
+    const IIOHAL_IO_ID_TYPE MOTOR_UNLOCK_OUTPUT_PIN = IOHAL_D1;
+    const IIOHAL_IO_ID_TYPE MOTOR_LOCK_OUTPUT_PIN = IOHAL_D2;
 
-    const auto KEY_LOCK = IOHAL_A13;
-    const auto KEY_UNLOCK = IOHAL_A12;
-
+    const IIOHAL_IO_ID_TYPE KEY_LOCK = IOHAL_A13;
+    const IIOHAL_IO_ID_TYPE KEY_UNLOCK = IOHAL_A12;
 
     Scheduler scheduler;
 
@@ -57,13 +28,16 @@ namespace {
     TelnetServer *telnetInterface = nullptr;
     MainTelnetUI *mainTelnetUI = nullptr;
     VSTP::VstpClient *vssCli = nullptr;
+    Configs *configs = nullptr;
 
     NamedLog nLog;
     MainLockControl *lockControl = nullptr;
+
+    const uint DEFAULT_LOCK_TIMEOUT_MS = 26500;
+    const char CONFIG_LOCK_TIMEOUT[] = "locker.timeoutMs";
 }
 
 bool tmp = true;
-uint timeout = 26500;
 
 void setup()
 {
@@ -90,6 +64,8 @@ void setup()
         nLog = logService->getNLog("Main");
 
         storage = new PreferencesLibraryStorage(scheduler);
+
+        configs = new Configs(*storage);
         
         conService = new WFService(scheduler, *logService, *storage, WIFI_HOSTNAME);
         
@@ -98,7 +74,18 @@ void setup()
         auto vstpPrefix = storage->get("vstp.prefix", DEFAULT_PREFIX);
         vssCli = new VSTP::VstpClient(scheduler, *conService, *logService, vstpPrefix);
 
-        mainTelnetUI = new MainTelnetUI(telnetHelpTitleLine, *hal, *logService, *storage, *conService, *keyboard, vssCli, *telnetInterface);
+        lockControl = new MainLockControl(
+            scheduler, 
+            *hal, 
+            *logService,
+            MOTOR_LOCK_OUTPUT_PIN, 
+            MOTOR_UNLOCK_OUTPUT_PIN, 
+            ENDLINE_LOCK_INPUT_PIN, 
+            ENDLINE_UNLOCK_INPUT_PIN, 
+            MOTOR_ENABLE_OUTPUT_PIN
+        );
+
+        mainTelnetUI = new MainTelnetUI(telnetHelpTitleLine, *hal, *logService, *storage, *conService, *keyboard, vssCli, *telnetInterface, *lockControl, *configs);
     /* #endregion } */
     
     /* #region wifi startup */
@@ -141,43 +128,57 @@ void setup()
     storage->set("misc.runs", String((runs.toInt() + 1)));
     nLog.info("Run count: " + runs);
 
+    if (configs->get(CONFIG_LOCK_TIMEOUT, "") == "")
+        configs->set(CONFIG_LOCK_TIMEOUT, String(DEFAULT_LOCK_TIMEOUT_MS));
+
     nLog.info("Main setup complete. Version: " + VERSION);
 
-    lockControl = new MainLockControl(
-        scheduler, 
-        *hal, 
-        *logService, 
-        MOTOR_LOCK_OUTPUT_PIN, 
-        MOTOR_UNLOCK_OUTPUT_PIN, 
-        ENDLINE_LOCK_INPUT_PIN, 
-        ENDLINE_UNLOCK_INPUT_PIN, 
-        MOTOR_ENABLE_OUTPUT_PIN
-    );
-
     lockControl->OnStateChange.listen([&](std::tuple<MainLockControl::WorkingState, String> stateInfo){
-
         auto state = MainLockControl::stateToString(std::get<0>(stateInfo));
         auto description = std::get<1>(stateInfo);
         vssCli->setVar("lockControl.state", state);
         vssCli->setVar("lockControl.description", description);
     });
 
-    keyboard->OnSpecificKeyPress(KEY_LOCK)->listen([&](IKeyboard::PressEvent event){
-        lockControl->Lock(timeout)->then([](MainLockControl::LockUnlockResult result){
+    vssCli->listenVar("lockControl.state", [=](VSTP::VssVar newState){
+        nLog.debug("Received new lock state via VSS: " + newState.value);
+        if (newState.value == "lock"){
+            lockControl->Lock(configs->get(CONFIG_LOCK_TIMEOUT, String(DEFAULT_LOCK_TIMEOUT_MS)).toInt())->then([=](MainLockControl::LockUnlockResult result){
             if (result.err != Errors::NoError){
-                nLog.error(Errors::DerivateError(result.err, "error locking the door"));
+                nLog.error(Errors::DerivateError(result.err, "error locking the door (requested via VSS)"));
             } else {
-                nLog.debug("door locked successfully. Time taken: " + String(result.timeTaken) + "ms");
+                nLog.debug("door locked successfully (requested via VSS). Time taken: " + String(result.timeTaken) + "ms");
+            }
+        });
+        } else if (newState.value == "unlock"){
+            lockControl->Unlock(configs->get(CONFIG_LOCK_TIMEOUT, String(DEFAULT_LOCK_TIMEOUT_MS)).toInt())->then([=](MainLockControl::LockUnlockResult result){
+            if (result.err != Errors::NoError){
+                nLog.error(Errors::DerivateError(result.err, "error unlocking the door (requested via VSS)"));
+            } else {
+                nLog.debug("door unlocked successfully (requested via VSS). Time taken: " + String(result.timeTaken) + "ms");
+            }
+        });
+        }
+    });
+
+    keyboard->OnSpecificKeyPress(KEY_LOCK)->listen([&](IKeyboard::PressEvent event){
+        auto timeoutMs = configs->get(CONFIG_LOCK_TIMEOUT, String(DEFAULT_LOCK_TIMEOUT_MS)).toInt();
+        lockControl->Lock(timeoutMs)->then([=](MainLockControl::LockUnlockResult result){
+            if (result.err != Errors::NoError){
+                nLog.error(Errors::DerivateError(result.err, "error locking the door (requested via keyboard)"));
+            } else {
+                nLog.debug("door locked successfully (requested via keyboard). Time taken: " + String(result.timeTaken) + "ms");
             }
         });
     });
 
     keyboard->OnSpecificKeyPress(KEY_UNLOCK)->listen([&](IKeyboard::PressEvent event){
-        lockControl->Unlock(timeout)->then([](MainLockControl::LockUnlockResult result){
+        auto timeoutMs = configs->get(CONFIG_LOCK_TIMEOUT, String(DEFAULT_LOCK_TIMEOUT_MS)).toInt();
+        lockControl->Unlock(timeoutMs)->then([=](MainLockControl::LockUnlockResult result){
             if (result.err != Errors::NoError){
-                nLog.error(Errors::DerivateError(result.err, "error unlocking the door"));
+                nLog.error(Errors::DerivateError(result.err, "error unlocking the door (requested via keyboard)"));
             } else {
-                nLog.debug("door unlocked successfully. Time taken: " + String(result.timeTaken) + "ms");
+                nLog.debug("door unlocked successfully (requested via keyboard). Time taken: " + String(result.timeTaken) + "ms");
             }
         });
     });

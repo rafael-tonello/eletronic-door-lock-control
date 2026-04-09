@@ -1,28 +1,8 @@
 #ifndef __MAIN_TELNETUI__H__
 #define __MAIN_TELNETUI__H__
 
-#include <errors/errors.h>
-
-#include <scheduler.h>
-
-#include <ikeyboard.h>
-#include <keyboard/impl/GenericIIOHalKeyboard.h>
-
-#include <iiohal.h>
-
-#include <ilogger.h>
-
-#include <istorage.h>
-#include <storage/impl/preferenceslibrary/preferenceslibrarystorage.h>
-
-#include <inetwork.h>
-
-#include <network/inetwork.h>
-#include <network/impl/wfservice.h>
-
-#include <telnet/telnetserver.h>
-#include <stringutils.h>
-#include <vssClient/vstpclient.h>
+#include "main.h"
+#include "main.lockcontrol.h"
 
 class MainTelnetUI {
 private:
@@ -35,6 +15,8 @@ private:
     IKeyboard &keyboard;
     VSTP::VstpClient *vssCli;
     TelnetServer &telnetInterface;
+    MainLockControl &lockControl;
+    Configs &configs;
 
     String helpTitleLine;
 
@@ -51,15 +33,19 @@ public:
         INetwork &conService,
         IKeyboard &keyboard,
         VSTP::VstpClient *vssCli,
-        TelnetServer &telnetInterface
-    ): 
-    hal(hal), 
-        logService(logService), 
-        storage(storage), 
-        conService(conService), 
-        keyboard(keyboard), 
+        TelnetServer &telnetInterface,
+        MainLockControl &lockControl,
+        Configs &configs
+    ):
+        hal(hal),
+        logService(logService),
+        storage(storage),
+        conService(conService),
+        keyboard(keyboard),
         vssCli(vssCli),
         telnetInterface(telnetInterface),
+        lockControl(lockControl),
+        configs(configs),
         helpTitleLine(helpTitleLine)
     {
         nLog = logService.getNLog("MainTelnetUI");
@@ -125,6 +111,14 @@ public:
             logsCommands(cli, onReady, args);
         };
 
+        commandsMap["door"] = [=](std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady, vector<String> args){
+            doorCommands(cli, onReady, args);
+        };
+
+        commandsMap["locker"] = [=](std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady, vector<String> args){
+            doorCommands(cli, onReady, args);
+        };
+
         commandsMap["vss"] = [=](std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady, vector<String> args){
             vssCommands(cli, onReady, args);
         };
@@ -140,6 +134,11 @@ public:
         cli->sendData(helpTitleLine);
         cli->sendData("Available commands:");
         cli->sendData("  help                   - Show this help message");
+        cli->sendData("  door|locker <subcommand> - Door lock control commands.");
+        cli->sendData("    subcommands:");
+        cli->sendData("      lock [timeout_ms]    - Lock the door using the motor controller");
+        cli->sendData("      unlock [timeout_ms]  - Unlock the door using the motor controller");
+        cli->sendData("      timeout [new_ms]     - Show or change the saved door timeout");
         cli->sendData("  wifi <subcommand>      - run wifi related commands. ");
         cli->sendData("    subcommands:");
         cli->sendData("      list                 - List available wifi networks");
@@ -175,6 +174,97 @@ public:
         cli->sendData("      reconnect            - Connect using saved server/port config.");
         cli->sendData("      disconnect           - Stop monitor and close current connection.");
         onReady();
+    }
+
+    void doorCommands(std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady, vector<String> args)
+    {
+        if (args.size() == 0 || args[0] == "")
+        {
+            cli->sendData("Missing door subcommand. Use: door lock [timeout_ms] | door unlock [timeout_ms] | door timeout [new_timeout_ms]");
+            onReady();
+            return;
+        }
+
+        auto sub = args[0];
+
+        if (sub == "lock")
+        {
+            auto lockArgs = vector<String>();
+            if (args.size() > 1)
+                lockArgs.assign(args.begin() + 1, args.end());
+
+            lockCommands(cli, onReady, lockArgs, true);
+            return;
+        }
+        else if (sub == "unlock")
+        {
+            auto lockArgs = vector<String>();
+            if (args.size() > 1)
+                lockArgs.assign(args.begin() + 1, args.end());
+
+            lockCommands(cli, onReady, lockArgs, false);
+            return;
+        }
+        else if (sub == "timeout")
+        {
+            if (args.size() == 1)
+            {
+                cli->sendData("Current door timeout: " + String(configs.get(AppMain::CONFIG_LOCK_TIMEOUT, String(AppMain::DEFAULT_LOCK_TIMEOUT_MS))) + "ms");
+                onReady();
+                return;
+            }
+
+            auto parsedTimeout = args[1].toInt();
+            if (parsedTimeout <= 0)
+            {
+                cli->sendData("Invalid timeout. Usage: door timeout [new_timeout_ms]");
+                onReady();
+                return;
+            }
+
+            configs.set(AppMain::CONFIG_LOCK_TIMEOUT, String(parsedTimeout));
+            cli->sendData("Door timeout updated to " + String(parsedTimeout) + "ms.");
+            onReady();
+            return;
+        }
+
+        cli->sendData("Unknown door subcommand: " + sub);
+        cli->sendData("Available: lock, unlock, timeout");
+        onReady();
+    }
+
+    void lockCommands(std::shared_ptr<TelnetServer::CliInfo>cli, function<void()> onReady, vector<String> args, bool isLockAction)
+    {
+        uint timeoutMs = configs.get(AppMain::CONFIG_LOCK_TIMEOUT, String(AppMain::DEFAULT_LOCK_TIMEOUT_MS)).toInt();
+        if (args.size() > 0 && args[0] != "")
+        {
+            auto parsedTimeout = args[0].toInt();
+            if (parsedTimeout <= 0)
+            {
+                cli->sendData("Invalid timeout. Usage: door " + String(isLockAction ? "lock" : "unlock") + " [timeout_ms]");
+                onReady();
+                return;
+            }
+
+            timeoutMs = (uint)parsedTimeout;
+        }
+
+        nLog.info("telnet requested to " + String(isLockAction ? "lock" : "unlock") + " with timeout " + String(timeoutMs) + "ms");
+        cli->sendData(String(isLockAction ? "Lock" : "Unlock") + " request started. Waiting for completion...");
+
+        auto action = isLockAction ? lockControl.Lock(timeoutMs) : lockControl.Unlock(timeoutMs);
+        action->then([=](MainLockControl::LockUnlockResult result){
+            if (result.err == Errors::NoError)
+            {
+                cli->sendData(String(isLockAction ? "Door locked" : "Door unlocked") + " successfully in " + String(result.timeTaken) + "ms.");
+            }
+            else
+            {
+                cli->sendData("Failed to " + String(isLockAction ? "lock" : "unlock") + ": " + result.err + " (" + String(result.timeTaken) + "ms)");
+            }
+
+            onReady();
+        });
     }
 
     String vssStateToString(VSTP::VstpClientState state)
