@@ -14,6 +14,45 @@ At the moment, this project is focused on the **ESP8266** platform because of it
 
 The architecture is being designed to make migration to other microcontrollers easier in the future.
 
+## Development Helper Script (`pman.sh`)
+
+This project includes a small management script called `pman.sh` to help with day-to-day development tasks and repository automation.
+
+### Main command: `./pman.sh init`
+
+The most important command is:
+
+```bash
+./pman.sh init
+```
+
+Run it when setting up the project or before starting regular development. It performs the initial project setup, including:
+
+- installing the local git hooks used by this repository,
+- preparing the hidden `.pman/` workspace folder and adding it to `.gitignore`,
+- opening `README.md` automatically when possible.
+
+### Available project commands
+
+- `./pman.sh init` — initialize the project for development.
+- `./pman.sh build --release` — build the firmware in release mode using PlatformIO.
+- `./pman.sh build --debug` — build the firmware in debug mode.
+- `./pman.sh clean` — remove generated build files.
+- `./pman.sh new-version` — apply or create a new version.
+- `./pman.sh finalize` — reserved for finalization tasks after development.
+- `./pman.sh --help` — show the available commands and descriptions.
+
+### Git hooks handled by `pman.sh`
+
+The `init` command installs and manages the repository git hooks in `.git/hooks`:
+
+- `commit-msg` — validates commit message format and requires prefixes such as `feat:`, `fix:`, `docs:`, `refactor:`, `test:`, and others.
+- `pre-commit` — reserved hook entry point for checks before a commit.
+- `post-commit` — runs project post-commit actions.
+- `post-merge` — runs project post-merge actions.
+
+On the `main` branch, the `post-commit` and `post-merge` hooks can automatically trigger the versioning helper used by the project.
+
 ## Code Structure
 
 All logic related to door lock control is implemented in `main.cpp` and the `main.*` files. All other files and modules are project independent and can be easy used in another projects.
@@ -54,6 +93,9 @@ All logic related to door lock control is implemented in `main.cpp` and the `mai
     |         ├── wfservice
     |              ├── wfservice.h -> Wi-Fi connection service implementation for ESP
     |              ├── wfservice.cpp
+    ├── vssClient
+    |    ├── vstpclient.h -> VSTP client interface for VSS variable operations
+    |    ├── vstpclient.cpp
     ├── log
          ├── ilogger.h -> defines the logging interface and holds the 
          |                default ilogger implementation
@@ -99,6 +141,26 @@ This module provides a generic connection-service interface (`IConService`) and 
 - creating TCP clients through `createClient()`.
 
 It also integrates with `storage` to persist and recover network credentials.
+
+### `vssClient`
+
+`vssClient` provides a client implementation for VSS using the VSTP text protocol over TCP.
+
+VSS (Variables and Streams Server) is a shared-state server and key-value database where variables are organized using dot notation and treated as data streams. Multiple clients can read/write the same variables, subscribe to changes, and react in real time to updates from other clients.
+
+Official VSS project:
+- https://github.com/rafael-tonello/Variables-and-Streams-Server-VSS
+
+The current implementation (`VstpClient`) is responsible for:
+
+- connecting and reconnecting to the configured VSS server,
+- exchanging initial protocol headers and client ID (`setid`) during session setup,
+- sending variable commands (`set`, `get`, `delete`),
+- subscribing and unsubscribing to variable changes (`subscribe` / `unsubscribe`),
+- dispatching asynchronous `varchanged` notifications to local observers,
+- exposing connection state changes through an event stream.
+
+This module is integrated with the internal scheduler/promise system to keep protocol operations asynchronous and non-blocking for the main application flow.
 
 ### `log`
 
