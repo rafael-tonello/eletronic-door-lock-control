@@ -1,3 +1,6 @@
+#ifndef __MAIN_LOCKCONTROL__H__
+#define __MAIN_LOCKCONTROL__H__
+
 //usage example
 #include <scheduler/misc/promise.h>
 #include <iiohal.h>
@@ -46,14 +49,14 @@ public:
     MainLockControl (
         Scheduler &scheduler,
         IIOHal &iohal,
-        ILogger &logger, 
+        ILogger &logger,
         IIOHAL_IO_ID_TYPE PLOCK_OUTPUT_PIN,
         IIOHAL_IO_ID_TYPE PUNLOCK_OUTPUT_PIN,
         IIOHAL_IO_ID_TYPE PLOCK_LIMIT_INPUT_PIN,
         IIOHAL_IO_ID_TYPE PUNLOCK_LIMIT_INPUT_PIN,
         IIOHAL_IO_ID_TYPE PENABLE_MOTOR_PIN
     ):  scheduler(scheduler), 
-        hal(iohal), 
+        hal(iohal),
         LOCK_OUTPUT_PIN(PLOCK_OUTPUT_PIN), 
         UNLOCK_OUTPUT_PIN(PUNLOCK_OUTPUT_PIN), 
         LOCK_LIMIT_INPUT_PIN(PLOCK_LIMIT_INPUT_PIN), 
@@ -228,3 +231,5 @@ protected:
 private:
     
 };
+
+#endif
