@@ -198,6 +198,19 @@ Promise<Error>::smp_t VSTP::VstpClient::connectToServer(String server, int port)
                     nLog.info("Connected to the VSS Server!");
                     connectingInProgress = false;
                     this->onConnectionStateChange.stream(VstpClientState::CONNECTED);
+
+
+                    //scroll all observing and check for those that are not sent to the server
+                    for (auto &obs: this->observings)
+                    {
+                        if (!obs.second.sentToServer)
+                        {
+                            nLog.debug("Sending observation pack to the server for var '"+obs.second.varName+"'");
+                            sendToServer(VstpCmdAndPayload{.cmd = ACTIONS_SUBSCRIBE_VAR, .payload = obs.second.varName + "("+String(obs.second.id)+")"});
+                            this->observings[obs.first].sentToServer = true;
+                        }
+                    }
+
                     ret->post(Errors::NoError);
 
                     
@@ -456,7 +469,7 @@ Promise<Error>::smp_t VSTP::VstpClient::setVar(String varName, String value)
 
     auto ret = Promise<Error>::get_smp();
     scheduler.run([=](){
-        if (cli.connected())
+        if (onConnectionStateChange.getCurrentState() == VstpClientState::CONNECTED)
         {
             this->sendToServer(ACTIONS_SET_VAR, varName + "=" + value);
             ret->post(Errors::NoError);
@@ -534,7 +547,7 @@ Promise<Error>::smp_t VSTP::VstpClient::deleteVar(String varName)
     auto ret = Promise<Error>::get_smp();
 
     scheduler.run([=](){
-        if (cli.connected())
+        if (onConnectionStateChange.getCurrentState() == VstpClientState::CONNECTED)
         {
             this->sendToServer(ACTIONS_DELETE_VAR, varName);
             ret->post(Errors::NoError);
@@ -554,9 +567,12 @@ Promise<uint>::smp_t VSTP::VstpClient::listenVar(String varName, function<void(V
     auto ret = Promise<uint>::get_smp();
     scheduler.run([=](){
         auto uniqueId = observerIdCount++;
-        this->observings[uniqueId] = VarListenInfo{.id = uniqueId, .varName = varName, .f = f};
+        this->observings[uniqueId] = VarListenInfo{.id = uniqueId, .varName = varName, .f = f, .sentToServer = false};
         nLog.debug("Sending observation pack to the server");
-        sendToServer(VstpCmdAndPayload{.cmd = ACTIONS_SUBSCRIBE_VAR, .payload = varName + "("+String(uniqueId)+")"});
+        if (onConnectionStateChange.getCurrentState() == VstpClientState::CONNECTED){
+            sendToServer(VstpCmdAndPayload{.cmd = ACTIONS_SUBSCRIBE_VAR, .payload = varName + "("+String(uniqueId)+")"});
+            this->observings[uniqueId].sentToServer = true;
+        }
 
         ret->post(uniqueId);
     });

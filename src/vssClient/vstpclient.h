@@ -41,6 +41,7 @@ namespace VSTP {
         uint id;
         String varName;
         function<void(VssVar var)> f;
+        bool sentToServer;
     };
 
     enum VstpClientState {DISCONNECTED, WAITING_NEXT_IP, CONNECTING, CONNECTED};
