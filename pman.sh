@@ -5,7 +5,7 @@
 projectRootPath="./"
 
 #project commands {
-    init_helpText="Initialize the project for development (install git hooks, etc.). Run it before starting daily development."
+    init_helpText="Initializes the project for development (install git hooks, etc.). Run it before starting daily development."
     init(){
         internalInit
         
@@ -23,7 +23,7 @@ projectRootPath="./"
         fi
     }
 
-    finalize_helpText="Finalize the project after development. Run it after finishing daily development."
+    finalize_helpText="Finalizes the project after development. Run it after finishing daily development."
     finalize(){
         :;
     }
