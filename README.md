@@ -1,6 +1,30 @@
 # Door Lock Control
 
+Door Lock Control is an embedded IoT project for building a connected door access system on **ESP8266** hardware. It combines lock actuation, keyboard input, persistent storage, Wi‑Fi networking, telnet-based configuration, and VSS integration in a modular architecture that can be adapted to other microcontroller-based automation projects.
+
+## Table of Contents
+
+- [Project Overview](#project-overview)
+- [Current Hardware Focus](#current-hardware-focus)
+- [Development Helper Script (`pman.sh`)](#development-helper-script-pmansh)
+  - [Main command: `./pman.sh init`](#main-command-pmansh-init)
+  - [Available project commands](#available-project-commands)
+  - [Git hooks handled by `pman.sh`](#git-hooks-handled-by-pmansh)
+- [Code Structure](#code-structure)
+  - [`iohal`](#iohal)
+  - [`keyboard`](#keyboard)
+  - [`storage`](#storage)
+  - [`tcpconnection` (`network` folder)](#tcpconnection-network-folder)
+  - [`vssClient`](#vssclient)
+  - [`log`](#log)
+  - [`misc`](#misc)
+  - [Scheduler and Promise System](#scheduler-and-promise-system)
+- [Architecture Overview](#architecture-overview)
+- [Status](#status)
+
 ## Project Overview
+
+[⬆ Back to top](#door-lock-control)
 
 This project is focused on controlling a door locking system.
 
@@ -10,15 +34,21 @@ The goal is to provide a clean and maintainable codebase for embedded door lock 
 
 ## Current Hardware Focus
 
+[⬆ Back to top](#door-lock-control)
+
 At the moment, this project is focused on the **ESP8266** platform because of its low power consumption and good fit for this use case.
 
 The architecture is being designed to make migration to other microcontrollers easier in the future.
 
 ## Development Helper Script (`pman.sh`)
 
+[⬆ Back to top](#door-lock-control)
+
 This project includes a small management script called `pman.sh` to help with day-to-day development tasks and repository automation.
 
 ### Main command: `./pman.sh init`
+
+[⬆ Back to top](#door-lock-control)
 
 The most important command is:
 
@@ -34,6 +64,8 @@ Run it when setting up the project or before starting regular development. It pe
 
 ### Available project commands
 
+[⬆ Back to top](#door-lock-control)
+
 - `./pman.sh init` — initialize the project for development.
 - `./pman.sh build --release` — build the firmware in release mode using PlatformIO.
 - `./pman.sh build --debug` — build the firmware in debug mode.
@@ -43,6 +75,8 @@ Run it when setting up the project or before starting regular development. It pe
 - `./pman.sh --help` — show the available commands and descriptions.
 
 ### Git hooks handled by `pman.sh`
+
+[⬆ Back to top](#door-lock-control)
 
 The `init` command installs and manages the repository git hooks in `.git/hooks`:
 
@@ -54,6 +88,8 @@ The `init` command installs and manages the repository git hooks in `.git/hooks`
 On the `main` branch, the `post-commit` and `post-merge` hooks can automatically trigger the versioning helper used by the project.
 
 ## Code Structure
+
+[⬆ Back to top](#door-lock-control)
 
 All logic related to door lock control is implemented in `main.cpp` and the `main.*` files. All other files and modules are project independent and can be easy used in another projects.
 
@@ -105,6 +141,8 @@ All logic related to door lock control is implemented in `main.cpp` and the `mai
 
 ### `iohal`
 
+[⬆ Back to top](#door-lock-control)
+
 `iohal` is the **Hardware Abstraction Layer (HAL)**.
 
 It isolates low-level hardware details from the rest of the application, which helps migrate the code to another microcontroller with fewer changes.
@@ -113,11 +151,15 @@ IoHal aims to abstract diferent ios types, like esp8266 digital and analogic ios
 
 ### `keyboard`
 
+[⬆ Back to top](#door-lock-control)
+
 `keyboard` is responsible for key reading.
 
 It includes debounce handling and an event stream model, making it easier to listen to key events in a consistent and clean way.
 
 ### `storage`
+
+[⬆ Back to top](#door-lock-control)
 
 `storage` defines an abstraction (`IStorage`) for internal flash persistence, with both synchronous and Promise-based asynchronous APIs (`get/set/has/remove`).
 
@@ -129,6 +171,8 @@ Current implementations are in `storage/impl`:
 Both implementations use a key-shortening strategy to support key-length constraints and provide async operations integrated with the scheduler.
 
 ### `tcpconnection` (`network` folder)
+
+[⬆ Back to top](#door-lock-control)
 
 This module provides a generic connection-service interface (`IConService`) and an ESP Wi-Fi implementation (`WFService`).
 
@@ -143,6 +187,8 @@ This module provides a generic connection-service interface (`IConService`) and 
 It also integrates with `storage` to persist and recover network credentials.
 
 ### `vssClient`
+
+[⬆ Back to top](#door-lock-control)
 
 `vssClient` provides a client implementation for VSS using the VSTP text protocol over TCP.
 
@@ -164,12 +210,16 @@ This module is integrated with the internal scheduler/promise system to keep pro
 
 ### `log`
 
+[⬆ Back to top](#door-lock-control)
+
 `log` contains the logging interface and default implementation.
 
 - `ILogger` defines leveled logs (`DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`) and named log channels.
 - `DefaultLogger` formats log headers (time, level, name) and writes to `Serial`.
 
 ### `misc`
+
+[⬆ Back to top](#door-lock-control)
 
 `misc` contains supporting libraries used by several modules, including:
 
@@ -178,6 +228,8 @@ This module is integrated with the internal scheduler/promise system to keep pro
 - `cancelationtoken`, `eventstream`, `stringutils`, and `configs`: general-purpose support utilities.
 
 ### Scheduler and Promise System
+
+[⬆ Back to top](#door-lock-control)
 
 The scheduler is a core piece of this project architecture.
 
@@ -195,6 +247,9 @@ Inside `misc/scheduler/misc`, the Promise system (`Promise`, `AsyncProcessChain`
 Utilities such as `runFsInOrder` and `WaitPromises` help compose async flows cleanly, reducing nested callback code and improving readability.
 
 ## Architecture Overview
+
+[⬆ Back to top](#door-lock-control)
+
 High-level component interaction:
 <!-- 🠜 🠞 🠟 🠝 -->
 
@@ -238,10 +293,12 @@ High-level component interaction:
   8) wifi manager uses log manager to log important events and errors
   9) keyboard uses iohal to read key states
   10) log manager uses esp serial to output logs
-  11) iohal uses the esp physical I/O to read and write to the hardware pins
-  
+  11) iohal uses the esp physical I/O to read and write to the hardware pins  
 ```
+Scheduler is used over all the components to keep asynchronous operations organized and non-blocking, especially for network interactions, VSS updates, and lock control timing.
 
 ## Status
+
+[⬆ Back to top](#door-lock-control)
 
 This is an initial structure and the project is under active development.
